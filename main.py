@@ -56,10 +56,9 @@ if __name__ == "__main__":
         if not packet:
             continue
         print(cnt, pheader.ts.tv_sec, pheader.len, pheader.caplen)
-        p = ct.pointer(packet.contents)
-        my_packet = PacketDemo(p)
+        my_packet = PacketDemo(ct.string_at(packet, pheader.len))
         # my_packet.print_layer1()
-        my_packet.print_layer(2)
+        my_packet.print_layer()
         # ipInfo = struct.unpack('<BBHHHBBH4s4s', bytes(p[14:34]))
         # # print(ipInfo)
         # srcIp = socket.inet_ntoa(ipInfo[-2])

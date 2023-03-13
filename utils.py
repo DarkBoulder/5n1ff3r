@@ -310,3 +310,9 @@ protocol_numbers = {
     254: 'Use for experimentation and testing',
     255: 'Reserved',
 }  # 145-252		Unassigned
+
+http_request_methods = {'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'CONNECT',
+                        'OPTIONS', 'TRACE', 'PATCH', 'MOVE', 'COPY', 'LINK',
+                        'UNLINK', 'WRAPPED', 'Extension-method'}
+
+
