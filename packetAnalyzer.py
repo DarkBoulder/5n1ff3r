@@ -1,5 +1,4 @@
 import binascii
-import ctypes
 import struct
 import socket
 from utils import *
@@ -37,7 +36,20 @@ def bytestream_to_ipv6addr(stream):
 
 
 class PacketDemo:
-    def __init__(self, data_src):
+    def __init__(self, data_src, cnt, now_time, st_time, pheader):
+        self.cnt = cnt  # frame cnt
+        """
+        struct pcap_pkthdr
+        {
+          struct timeval ts;    /* time stamp */
+          bpf_u_int32 caplen;   /* length of portion present */
+          bpf_u_int32 len;      /* length this packet (off wire) */
+        };
+        """
+        self.time_stamp = now_time
+        self.time_span = format(now_time - st_time, '.6f')
+        self.len = pheader.len
+        self.caplen = pheader.caplen
         self.raw_packet = None
         if str(type(data_src)) == '<class \'str\'>':  # path of testcases
             with open(data_src, 'r') as f:
@@ -63,7 +75,8 @@ class PacketDemo:
             'tcpSdTrace': None, 'tcpRcTrace': None
         }
         self.layer4 = {
-            'name': None, 'info': None, 'rqm': None, 'rqu': None, 'rqv': None, 'rpv': None, 'sc': None, 'rpp': None
+            'name': None, 'info': None, 'rqm': None, 'rqu': None, 'rqv': None, 'rpv': None, 'sc': None, 'rpp': None,
+            'tid': None, 'flag': None, 'ques': None, 'ansrr': None, 'authrr': None, 'addrr': None
         }
         self.parse_packet()
 
@@ -145,9 +158,9 @@ class PacketDemo:
             if self.layer3['hl'] > 5:
                 op_extra = 4 * (self.layer3['hl'] - 5)
                 self.layer3['op'] = struct.unpack('>{}s'.format(op_extra), self.raw_packet[st + 20:st + 20 + op_extra])
-            self.print_layer()
-            if len(self.raw_packet) > st+20+op_extra:
-                print(len(self.raw_packet), st+20+op_extra)
+            # self.print_layer()
+            if len(self.raw_packet) > st+20+op_extra:  # padding to 64 (with FCS)
+                # print(len(self.raw_packet), st+20+op_extra)
                 self.parse_layer4(st+20+op_extra)
 
         elif self.layer2['protocol'] == 'UDP' or self.layer2['nh'] == 'UDP':
@@ -174,7 +187,11 @@ class PacketDemo:
 
     def parse_layer4(self, st):
         if self.layer3['name'] == 'TCP' and (self.layer3['src'] == 80 or self.layer3['dst'] == 80):  # http
-            http_info = bytes.decode(self.raw_packet[st:], 'utf8').split('\r\n')
+            try:
+                http_info = bytes.decode(self.raw_packet[st:], 'utf8').split('\r\n')
+            except:
+                self.layer4['name'] = 'UNK'
+                return
             self.layer4['name'] = 'HTTP'
             is_request = False
             for ele in http_request_methods:
@@ -186,15 +203,31 @@ class PacketDemo:
                 self.layer4['rqm'] = request[0]  # request_method
                 self.layer4['rqu'] = request[1]  # request_uri
                 self.layer4['rqv'] = request[2]  # request_version
-            else:
+            elif http_info[0].find('HTTP') != -1:
                 response = http_info[0].split(' ')
                 self.layer4['rpv'] = response[0]  # response version
                 self.layer4['sc'] = response[1]  # status code
                 self.layer4['rpp'] = ' '.join(response[2:])  # response phrase
             self.layer4['info'] = http_info[0]
-        if self.layer3['name'] == 'TCP' and (self.layer3['src'] == 443 or self.layer3['dst'] == 443):  # https
+        elif self.layer3['name'] == 'TCP' and (self.layer3['src'] == 443 or self.layer3['dst'] == 443):  # https
             self.layer4['name'] = 'HTTPS'
             self.layer4['info'] = ''
+        elif self.layer3['name'] == 'UDP' and (self.layer3['src'] == 53 or self.layer3['dst'] == 53):  # DNS
+            dns_info = struct.unpack('>HHHHHH', self.raw_packet[st:st + 12])
+            self.layer4['name'] = 'DNS'
+            self.layer4['tid'] = hex(dns_info[0])
+            self.layer4['flag'] = dns_info[1]
+            response = self.layer4['flag'] >> 15  # query or response
+            opcode = (self.layer4['flag'] & 0x7800) >> 11  # 0: standard query 1: inverse query 2: server status request
+            auth = (self.layer4['flag'] & 0x400) >> 10  # server is (not) an authority of domain
+            trun = (self.layer4['flag'] & 0x200) >> 9  # 1: truncated
+            rec_des = (self.layer4['flag'] & 0x100) >> 8  # recursion desired, 1: do query recursively
+            rec_ava = (self.layer4['flag'] & 0x80) >> 7  # server can do recursive queries
+            reply_code = (self.layer4['flag'] & 0xf)  # 0: no error, 1: format error, 2: server fail, 3: Nonexistent domain
+            self.layer4['ques'] = dns_info[2]
+            self.layer4['ansrr'] = dns_info[3]
+            self.layer4['authrr'] = dns_info[4]
+            self.layer4['addrr'] = dns_info[5]
 
     def parse_packet(self):
         self.parse_layer1()

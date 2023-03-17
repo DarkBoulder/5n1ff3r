@@ -2,6 +2,8 @@
 packet_testcase
 *.cap
 *.txt
+*.ui
+test.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
