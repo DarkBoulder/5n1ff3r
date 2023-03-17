@@ -107,7 +107,7 @@ class Ui_MainWindow(object):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
         item = self.tableWidget.horizontalHeaderItem(0)
-        item.setText(_translate("MainWindow", "网卡"))
+        item.setText(_translate("MainWindow", "No."))
         self.menuFile.setTitle(_translate("MainWindow", "文件"))
         self.toolBar.setWindowTitle(_translate("MainWindow", "toolBar"))
         self.quit.setText(_translate("MainWindow", "退出"))

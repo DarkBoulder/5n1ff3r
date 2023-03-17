@@ -18,10 +18,7 @@ if __name__ == "__main__":
     ui = SnifferUI.Ui_MainWindow()
     ui.setupUi(window)
     # window.setWindowIcon(QIcon('web.png'))#增加icon图标
-    window.show()
     sc = SnifferController.SnifferController(ui)  # C
-    sc.setupDevice()
-    sc.setConnection()
-    sc.setMainUI()
+    window.show()
     sys.exit(app.exec_())  # 进入程序的主循环，并通过exit函数确保主循环安全结束
 
