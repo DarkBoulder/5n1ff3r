@@ -24,7 +24,7 @@ from packetAnalyzer import *
 
 
 class Sniffer(QtCore.QThread):
-    HandleSignal = QtCore.pyqtSignal(str)  # scapy.layers.l2.Ether)
+    HandleSignal = QtCore.pyqtSignal(PacketDemo)
 
     def __init__(self) -> None:
         super().__init__()
@@ -33,7 +33,8 @@ class Sniffer(QtCore.QThread):
         # self.conditionFlag = False
         self.mutex_1 = QMutex()
         # self.cond = QWaitCondition()
-
+        self.conditionFlag = False
+        self.cond = QWaitCondition()
         self.handle = None
 
     def run(self):
@@ -43,12 +44,14 @@ class Sniffer(QtCore.QThread):
         st_time = time.time()
         while True:
             self.mutex_1.lock()
+            if self.conditionFlag:
+                self.cond.wait(self.mutex_1)
             packet = pcap.next(self.handle, pheader)
             if not packet:
                 continue
             now_time = pheader.ts.tv_sec + pheader.ts.tv_usec / 1000000
             my_packet = PacketDemo(ct.string_at(packet, pheader.len), cnt, now_time, st_time, pheader)
-            # my_packet.print_layer(1)
+            self.HandleSignal.emit(my_packet)
             cnt += 1
             self.mutex_1.unlock()
 

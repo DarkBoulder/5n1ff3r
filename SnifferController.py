@@ -44,6 +44,7 @@ class SnifferController:
         self.errbuf = ct.create_string_buffer(pcap.PCAP_ERRBUF_SIZE + 1)
         self.alldevs = ct.POINTER(pcap.pcap_if_t)()
         self.setupDevice()
+        self.packets = []
 
     def setupDevice(self):
         pcap.findalldevs(ct.byref(self.alldevs), self.errbuf)
@@ -59,7 +60,7 @@ class SnifferController:
     def selectDevice(self, row, col):
         # 打印被选中的单元格
         res = self.ui.tableWidget.item(row, col)
-        print(row, col, self.ui.tableWidget.item(row, col))
+        # print(row, col, self.ui.tableWidget.item(row, col))
         device = res.text()
         handle = pcap.open_live(bytes(device, 'utf8'), 4096, 1, 1000, self.errbuf)
         if self.errbuf.value:
@@ -75,27 +76,16 @@ class SnifferController:
         for i in range(res):
             self.ui.tableWidget.removeRow(0)
 
-        self.ui.tableWidget.setColumnCount(6)
-        item = QtWidgets.QTableWidgetItem()
-        self.ui.tableWidget.setHorizontalHeaderItem(1, item)
-        item = QtWidgets.QTableWidgetItem()
-        self.ui.tableWidget.setHorizontalHeaderItem(2, item)
-        item = QtWidgets.QTableWidgetItem()
-        self.ui.tableWidget.setHorizontalHeaderItem(3, item)
-        item = QtWidgets.QTableWidgetItem()
-        self.ui.tableWidget.setHorizontalHeaderItem(4, item)
-        item = QtWidgets.QTableWidgetItem()
-        self.ui.tableWidget.setHorizontalHeaderItem(5, item)
-        item = self.ui.tableWidget.horizontalHeaderItem(1)
-        item.setText(self._translate("MainWindow", "Time"))
-        item = self.ui.tableWidget.horizontalHeaderItem(2)
-        item.setText(self._translate("MainWindow", "Source"))
-        item = self.ui.tableWidget.horizontalHeaderItem(3)
-        item.setText(self._translate("MainWindow", "Destination"))
-        item = self.ui.tableWidget.horizontalHeaderItem(4)
-        item.setText(self._translate("MainWindow", "Protocol"))
-        item = self.ui.tableWidget.horizontalHeaderItem(5)
-        item.setText(self._translate("MainWindow", "Info"))
+        self.ui.tableWidget.cellDoubleClicked.disconnect(self.selectDevice)
+        self.ui.tableWidget.cellClicked.connect(self.showDetailInfo)
+
+        col_header = ['No.', 'Time', 'Source', 'Destination', 'Protocol', 'Length', 'Info']
+        self.ui.tableWidget.setColumnCount(len(col_header))
+        for i in range(len(col_header) - 1):
+            item = QtWidgets.QTableWidgetItem()
+            self.ui.tableWidget.setHorizontalHeaderItem(i + 1, item)
+            item = self.ui.tableWidget.horizontalHeaderItem(i + 1)
+            item.setText(self._translate("MainWindow", col_header[i + 1]))
 
         self.ui.tableWidget.horizontalHeader().setVisible(True)
 
@@ -111,14 +101,44 @@ class SnifferController:
     def setConnection(self):
         # print(self.ui.tableWidget.__dict__)
         self.ui.tableWidget.cellDoubleClicked.connect(self.selectDevice)
+        self.sniffer.HandleSignal.connect(self.CallBack)
 
     def setMainUI(self):
         splitter1 = QSplitter(Qt.Horizontal)
         splitter1.addWidget(self.ui.tableWidget_2)
-        splitter1.addWidget(self.ui.tableWidget_3)
+        splitter1.addWidget(self.ui.plainTextEdit)
 
         splitter2 = QSplitter(Qt.Vertical)
         splitter2.addWidget(self.ui.tableWidget)
         splitter2.addWidget(splitter1)
 
         self.ui.verticalLayout.addWidget(splitter2)
+
+    def CallBack(self, my_packet: PacketDemo):
+        # assert type(packet) == 'PacketDemo'
+        self.packets.append(my_packet)
+        number = my_packet.cnt
+        time = my_packet.time_span
+        src = my_packet.general_info['src']
+        dst = my_packet.general_info['dst']
+        proto = my_packet.general_info['proto']
+        length = my_packet.len
+        info = my_packet.general_info['info']
+        general_info = [number, time, src, dst, proto, length, info]
+        # print(general_info)
+
+        # add to widget
+        self.ui.tableWidget.setSelectionBehavior(self.ui.tableWidget.SelectRows)
+        row = self.ui.tableWidget.rowCount()
+        self.ui.tableWidget.insertRow(row)
+        for i in range(len(general_info)):
+            item = QtWidgets.QTableWidgetItem(str(general_info[i]))
+            item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            self.ui.tableWidget.setItem(row, i, item)
+            if number == 1:
+                self.ui.tableWidget.resizeColumnToContents(i)
+        # print(my_packet.print_layer())
+
+    def showDetailInfo(self, row, col):
+        pkt = self.packets[row]
+        self.ui.plainTextEdit.setPlainText(str(pkt.hex_packet))
