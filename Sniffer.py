@@ -58,6 +58,16 @@ class Sniffer(QtCore.QThread):
     def getHandle(self, handle):
         self.handle = handle
 
+    def play(self):
+        self.conditionFlag = False
+        self.cond.wakeAll()
+
+    def pause(self):
+        self.conditionFlag = True
+
+    def stop(self):
+        pass
+
     # def pause(self):
     #     self.conditionFlag = True
     #

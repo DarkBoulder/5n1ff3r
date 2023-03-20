@@ -1,3 +1,10 @@
+def get_key(dic: dict, val):
+    for key, value in dic.items():
+        if val == value:
+            return key
+    return 'unknown value'
+
+
 ieee_802_numbers = {
     '0200': 'XEROX PUP (see 0A00)',
     '0201': 'PUP Addr Trans (see 0A01)',
@@ -314,5 +321,3 @@ protocol_numbers = {
 http_request_methods = {'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'CONNECT',
                         'OPTIONS', 'TRACE', 'PATCH', 'MOVE', 'COPY', 'LINK',
                         'UNLINK', 'WRAPPED', 'Extension-method'}
-
-

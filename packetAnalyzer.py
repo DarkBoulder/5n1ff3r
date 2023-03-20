@@ -149,7 +149,7 @@ class PacketDemo:
             self.layer2['src'] = bytestream_to_ipv6addr(ipv6_info[4])
             self.layer2['dst'] = bytestream_to_ipv6addr(ipv6_info[5])
             self.layer2['version'] = ipv6_info[0] >> 28
-            self.layer2['tc'] = hex((ipv6_info[0] & 0xfffffff) >> 20)  # traffic_class
+            self.layer2['tc'] = hex((ipv6_info[0] & 0xfffffff) >> 20)  # traffic_class TODO: need to parse
             self.layer2['fl'] = hex(ipv6_info[0] & 0xfffff)  # flow_label
             self.layer2['pl'] = ipv6_info[1]  # payload_length
             self.layer2['nh'] = protocol_numbers.get(ipv6_info[2], 'Unassigned')  # next_header
@@ -160,7 +160,7 @@ class PacketDemo:
         elif self.layer1['type'] == 'Address Resolution Protocol (ARP)':
             arp_info = struct.unpack('>H2sBBH6s4s6s4s', self.raw_packet[st:st + 28])
             self.layer2['name'] = self.layer1['type']
-            self.layer2['htype'] = arp_info[0]  # hardware type
+            self.layer2['htype'] = arp_info[0]  # hardware type TODO: parse type
             self.layer2['ptype'] = str(bytes.hex(arp_info[1]))  # protocol type
             self.layer2['hlen'] = arp_info[2]  # Hardware address length
             self.layer2['plen'] = arp_info[3]  # Protocol address length
@@ -200,10 +200,10 @@ class PacketDemo:
                 self.layer3['op'] = struct.unpack('>{}s'.format(op_extra), self.raw_packet[st + 20:st + 20 + op_extra])
             # self.print_layer()
             if self.layer2['protocol'] == 'TCP':
-                self.set_general_info(self.layer3['src'], self.layer3['dst'], 'TCP', '{} -> {} [{}]'
+                self.set_general_info(proto='TCP', info='{} -> {} [{}]'
                                       .format(self.layer3['src'], self.layer3['dst'], flag_info))
             else:
-                self.set_general_info(self.layer3['src'], self.layer3['dst'], 'TCPv6', '{} -> {} [{}]'
+                self.set_general_info(proto='TCPv6', info='{} -> {} [{}]'
                                       .format(self.layer3['src'], self.layer3['dst'], flag_info))
             if len(self.raw_packet) > st + 20 + op_extra:  # padding to 64 (with FCS)
                 # print(len(self.raw_packet), st+20+op_extra)
@@ -217,9 +217,9 @@ class PacketDemo:
             self.layer3['length'] = udp_info[2]  # header(8) + data
             self.layer3['chksum'] = udp_info[3]
             if self.layer2['protocol'] == 'UDP':
-                self.set_general_info(self.layer3['src'], self.layer3['dst'], 'UDP', '')
+                self.set_general_info(proto='UDP', info='')
             else:
-                self.set_general_info(self.layer3['src'], self.layer3['dst'], 'UDPv6', '')
+                self.set_general_info(proto='UDPv6', info='')
             if len(self.raw_packet) >= st + 8:
                 self.parse_layer4(st + 8)
 
@@ -261,11 +261,11 @@ class PacketDemo:
                 self.layer4['sc'] = response[1]  # status code
                 self.layer4['rpp'] = ' '.join(response[2:])  # response phrase
             self.layer4['info'] = http_info[0]
-            self.set_general_info(proto='HTTP', info=self.layer4['info'])
+            self.set_general_info(proto='HTTP', info='')
         elif self.layer3['name'] == 'TCP' and (self.layer3['src'] == 443 or self.layer3['dst'] == 443):  # https
             self.layer4['name'] = 'HTTPS'
             self.layer4['info'] = ''
-            self.set_general_info(proto='HTTPS')
+            self.set_general_info(proto='HTTPS', info='')
         elif self.layer3['name'] == 'UDP' and (self.layer3['src'] == 53 or self.layer3['dst'] == 53):  # DNS
             dns_info = struct.unpack('>HHHHHH', self.raw_packet[st:st + 12])
             self.layer4['name'] = 'DNS'
