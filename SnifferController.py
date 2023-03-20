@@ -284,6 +284,107 @@ class SnifferController:
 
         # layer3 info
         if pkt.layer3['name'] == 'TCP':
+            layer3 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
+            layer3.setText(0, 'Transmission Control Protocol, Src Port: {}, Dst Port: {}, Seq: {}, Len: {}'.format(
+                str(pkt.layer3['src']), str(pkt.layer3['dst']), str(pkt.layer3['seq']), str(pkt.layer3['payload_len'])))
+            layer3_src = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_src.setText(0, 'Source Port: {}'.format(str(pkt.layer3['src'])))
+            layer3_dst = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_dst.setText(0, 'Destination Port: {}'.format(str(pkt.layer3['dst'])))
+            layer3_seq = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_seq.setText(0, 'Sequence Number: {}'.format(str(pkt.layer3['seq'])))
+            layer3_ack = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_ack.setText(0, 'Acknowledgement Number: {}'.format(str(pkt.layer3['ack'])))
+            layer3_hl = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_hl.setText(0, 'Header Length: {}'.format(str(pkt.layer3['hl'])))
+            layer3_dst = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_dst.setText(0, 'Destination Port: {}'.format(str(pkt.layer3['dst'])))
 
+            flag_info = ''
+            for ele in pkt.layer3['flag_dic']:
+                flag_info += (ele + ', ')
+            flag_info = flag_info[:-2]
+            layer3_flag = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_flag.setText(0, 'Flags: {} ({})'.format('%03x' % pkt.layer3['flag'], flag_info))
+            layer3_window = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_window.setText(0, 'Window: {}'.format(str(pkt.layer3['window'])))
+            layer3_chksum = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_chksum.setText(0, 'Checksum: {}'.format(str(hex(pkt.layer3['chksum']))))
+            layer3_up = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_up.setText(0, 'Urgent Pointer: {}'.format(str(hex(pkt.layer3['up']))))
+            layer3_payload = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_payload.setText(0, 'TCP Payload: {}'.format(str(hex(pkt.layer3['payload_len']))))
+        elif pkt.layer3['name'] == 'UDP':
+            layer3 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
+            layer3.setText(0, 'User Datagram Protocol, Src Port: {}, Dst Port: {}'.format(
+                str(pkt.layer3['src']), str(pkt.layer3['dst'])))
+            layer3_src = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_src.setText(0, 'Source Port: {}'.format(str(pkt.layer3['src'])))
+            layer3_dst = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_dst.setText(0, 'Destination Port: {}'.format(str(pkt.layer3['dst'])))
+            layer3_len = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_len.setText(0, 'Length: {}'.format(str(pkt.layer3['length'])))
+            layer3_chksum = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_chksum.setText(0, 'Checksum: {}'.format(str(hex(pkt.layer3['chksum']))))
+            layer3_payload = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_payload.setText(0, 'UDP Payload ({} bytes)'.format(str(pkt.layer3['length'] - 8)))
+        elif pkt.layer3['name'] == 'ICMP':
+            layer3 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
+            layer3.setText(0, 'Internet Control Message Protocol')
+            layer3_type = QtWidgets.QTreeWidgetItem(layer3)
+            type_option = 'request' if pkt.layer3['type'] == 8 else 'reply' if pkt.layer3['type'] == 0 else ''
+            layer3_type.setText(0, 'Type: {} (Echo (ping) {})'.format(str(pkt.layer3['type']), type_option))
+            layer3_code = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_code.setText(0, 'Code: {}'.format(str(pkt.layer3['code']), type_option))
+            layer3_chksum = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_chksum.setText(0, 'Checksum: {}'.format(str(hex(pkt.layer3['chksum']))))
+            layer3_id = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_id.setText(0, 'Identifier: {}'.format(str(hex(pkt.layer3['id']))))
+            layer3_seq = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_seq.setText(0, 'Sequence Number: {}'.format(str(hex(pkt.layer3['seq']))))
+            layer3_data = QtWidgets.QTreeWidgetItem(layer3)
+            layer3_data.setText(0, 'Data ({} bytes)'.format(str(pkt.layer2['len'] - pkt.layer2['ihl'] * 4 - 8)))
+        else:
+            return
 
-
+        # layer4 info
+        if pkt.layer4['name'] == 'HTTP':
+            layer4 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
+            layer4.setText(0, 'Hypertext Transfer Protocol')
+            http_info = pkt.layer4['httpinfo'].strip().split('\r\n')
+            layer4_httpinfo = []
+            for ele in http_info:
+                layer4_httpinfo.append(QtWidgets.QTreeWidgetItem(layer4))
+                layer4_httpinfo[-1].setText(0, ele)
+        elif pkt.layer4['name'] == 'HTTPS':
+            layer4 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
+            layer4.setText(0, 'Hypertext Transfer Protocol Secure')
+        elif pkt.layer4['name'] == 'DNS':
+            opration = ''
+            if pkt.layer4['flag_dict']['opcode'] <= 1:
+                operation = 'query'
+            elif pkt.layer4['flag_dict']['opcode'] == 2:
+                operation = 'request'
+            layer4 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
+            layer4.setText(0, 'Domain Name System ({})'.format(opration))
+            layer4_tid = QtWidgets.QTreeWidgetItem(layer4)
+            layer4_tid.setText(0, 'Transaction ID: {}'.format(str(pkt.layer4['tid'])))
+            flag_info = 'Standard query' if pkt.layer4['flag_dict']['opcode'] == 0 else\
+                        'Inverse query' if pkt.layer4['flag_dict']['opcode'] == 1 else\
+                        'Server status request' if pkt.layer4['flag_dict']['opcode'] == 2 else\
+                        ''
+            layer4_flag = QtWidgets.QTreeWidgetItem(layer4)
+            layer4_flag.setText(0, 'Flags: {} {}'.format('%04x' % pkt.layer4['flag'], flag_info))
+            # TODO: put flag details in
+            layer4_ques = QtWidgets.QTreeWidgetItem(layer4)
+            layer4_ques.setText(0, 'Questions: {}'.format(str(pkt.layer4['ques'])))
+            layer4_ansrr = QtWidgets.QTreeWidgetItem(layer4)
+            layer4_ansrr.setText(0, 'Answer RRs: {}'.format(str(pkt.layer4['ansrr'])))
+            layer4_authrr = QtWidgets.QTreeWidgetItem(layer4)
+            layer4_authrr.setText(0, 'Authority RRs: {}'.format(str(pkt.layer4['authrr'])))
+            layer4_addrr = QtWidgets.QTreeWidgetItem(layer4)
+            layer4_addrr.setText(0, 'Additional RRs: {}'.format(str(pkt.layer4['addrr'])))
+            layer4_query = QtWidgets.QTreeWidgetItem(layer4)
+            layer4_query.setText(0, 'Queries')
+        else:
+            return

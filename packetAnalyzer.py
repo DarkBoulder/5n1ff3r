@@ -80,18 +80,19 @@ class PacketDemo:
             'tos': None, 'len': None, 'id': None, 'flag': None, 'ttl': None, 'protocol': None,
             'chksum': None, 'tc': None, 'fl': None, 'pl': None, 'nh': None,
             'opt': None, 'htype': None, 'ptype': None, 'hlen': None, 'plen': None,
-            'op': None, 'info': None, 'sha': None, 'spa': None, 'tha': None, 'tpa': None
+            'op': None, 'info': None, 'sha': None, 'spa': None, 'tha': None, 'tpa': None, 'op_len': None
         }
         # tcp udp icmp igmp
         self.layer3 = {
             'name': None, 'src': None, 'dst': None, 'seq': None, 'ack': None, 'op': None,
             'hl': None, 'reserved': None, 'flag': None, 'len': None, 'chksum': None, 'up': None,
             'type': None, 'code': None, 'id': None, 'info': None, 'window': None, 'tcptrace': None,
-            'tcpSdTrace': None, 'tcpRcTrace': None
+            'tcpSdTrace': None, 'tcpRcTrace': None, 'flag_dic': None
         }
         self.layer4 = {
             'name': None, 'info': None, 'rqm': None, 'rqu': None, 'rqv': None, 'rpv': None, 'sc': None, 'rpp': None,
-            'tid': None, 'flag': None, 'ques': None, 'ansrr': None, 'authrr': None, 'addrr': None
+            'tid': None, 'flag': None, 'ques': None, 'ansrr': None, 'authrr': None, 'addrr': None, 'httpinfo': None,
+            'flag_dict': None
         }
         self.general_info = {
             'src': None, 'dst': None, 'proto': None, 'info': None
@@ -141,6 +142,7 @@ class PacketDemo:
             if self.layer2['ihl'] > 5:
                 op_extra = 4 * (self.layer2['ihl'] - 5)
                 self.layer2['op'] = struct.unpack('>{}s'.format(op_extra), self.raw_packet[st + 20:st + 20 + op_extra])
+            self.layer2['op_len'] = op_extra
             self.parse_layer3(st + 20 + op_extra)
 
         elif self.layer1['type'] == 'Internet Protocol version 6 (IPv6)':
@@ -151,7 +153,7 @@ class PacketDemo:
             self.layer2['version'] = ipv6_info[0] >> 28
             self.layer2['tc'] = hex((ipv6_info[0] & 0xfffffff) >> 20)  # traffic_class TODO: need to parse
             self.layer2['fl'] = hex(ipv6_info[0] & 0xfffff)  # flow_label
-            self.layer2['pl'] = ipv6_info[1]  # payload_length
+            self.layer2['pl'] = ipv6_info[1]  # payload_length, 1 for 1Byte
             self.layer2['nh'] = protocol_numbers.get(ipv6_info[2], 'Unassigned')  # next_header
             self.layer2['hl'] = ipv6_info[3]  # hop_limit
             self.set_general_info(self.layer2['src'], self.layer2['dst'], 'IPv6', '')
@@ -183,22 +185,32 @@ class PacketDemo:
             self.layer3['dst'] = tcp_info[1]  # destination port num
             self.layer3['seq'] = tcp_info[2]
             self.layer3['ack'] = tcp_info[3]
-            self.layer3['hl'] = tcp_info[4] >> 12  # header length
+            self.layer3['hl'] = tcp_info[4] >> 12  # header length, 4B for each
             self.layer3['reserved'] = (tcp_info[4] & 0xfff) >> 6  # should be 0
-            self.layer3['flag'] = tcp_info[4] & 0x3f  # TODO: need to parse
+            self.layer3['flag'] = tcp_info[4] & 0x3f
+
             flag_dic = parse_flag(self.layer3['flag'], ['CWR', 'ECE', 'URG', 'ACK', 'PSH', 'RST', 'SYN', 'FIN'])
+            self.layer3['flag_dic'] = flag_dic
             flag_info = ''
             for ele in flag_dic:
                 flag_info += (ele + ', ')
             flag_info = flag_info[:-2]
+
             self.layer3['window'] = tcp_info[5]
             self.layer3['chksum'] = tcp_info[6]
             self.layer3['up'] = tcp_info[7]  # urgent pointer
-            op_extra = 0
+
+            op_extra = 0  # option length
             if self.layer3['hl'] > 5:
                 op_extra = 4 * (self.layer3['hl'] - 5)
                 self.layer3['op'] = struct.unpack('>{}s'.format(op_extra), self.raw_packet[st + 20:st + 20 + op_extra])
-            # self.print_layer()
+
+            if self.layer2['name'] == 'Internet Protocol version 4 (IPv4)':
+                # print(self.layer2['len'], self.layer2['ihl'] * 4, self.layer2['op_len'], self.layer3['hl'] * 4, op_extra)
+                self.layer3['payload_len'] = self.layer2['len'] - self.layer2['ihl'] * 4 - self.layer2['op_len'] - self.layer3['hl'] * 4 - op_extra
+            elif self.layer2['name'] == 'Internet Protocol version 6 (IPv6)':
+                self.layer3['payload_len'] = self.layer2['pl'] - 40 - self.layer3['hl'] * 4 - op_extra
+
             if self.layer2['protocol'] == 'TCP':
                 self.set_general_info(proto='TCP', info='{} -> {} [{}]'
                                       .format(self.layer3['src'], self.layer3['dst'], flag_info))
@@ -231,6 +243,7 @@ class PacketDemo:
             self.layer3['chksum'] = icmp_info[2]
             self.layer3['id'] = icmp_info[3]
             self.layer3['seq'] = icmp_info[4]
+            # TODO: Parse more types
             self.layer3['info'] = 'Echo (ping) request id={}, seq={}'.format(self.layer3['id'], self.layer3['seq']) \
                 if self.layer3['type'] == 8 else 'Echo (ping) reply id={}, seq={}'.format(self.layer3['id'],
                                                                                           self.layer3['seq']) \
@@ -241,6 +254,7 @@ class PacketDemo:
         if self.layer3['name'] == 'TCP' and (self.layer3['src'] == 80 or self.layer3['dst'] == 80):  # http
             try:
                 http_info = bytes.decode(self.raw_packet[st:], 'utf8').split('\r\n')
+                self.layer4['httpinfo'] = http_info
             except:
                 self.layer4['name'] = 'UNK'
                 return
@@ -271,29 +285,29 @@ class PacketDemo:
             self.layer4['name'] = 'DNS'
             self.layer4['tid'] = hex(dns_info[0])
             self.layer4['flag'] = dns_info[1]
-            response = self.layer4['flag'] >> 15  # query or response
-            opcode = (self.layer4['flag'] & 0x7800) >> 11  # 0: standard query 1: inverse query 2: server status request
-            auth = (self.layer4['flag'] & 0x400) >> 10  # server is (not) an authority of domain
-            trun = (self.layer4['flag'] & 0x200) >> 9  # 1: truncated
-            rec_des = (self.layer4['flag'] & 0x100) >> 8  # recursion desired, 1: do query recursively
-            rec_ava = (self.layer4['flag'] & 0x80) >> 7  # server can do recursive queries
-            reply_code = (self.layer4[
-                              'flag'] & 0xf)  # 0: no error, 1: format error, 2: server fail, 3: Nonexistent domain
+            self.layer4['flag_dict'] = {}
+            self.layer4['flag_dict']['response'] = self.layer4['flag'] >> 15  # query or response
+            self.layer4['flag_dict']['opcode'] = (self.layer4['flag'] & 0x7800) >> 11  # 0: standard query 1: inverse query 2: server status request
+            self.layer4['flag_dict']['auth'] = (self.layer4['flag'] & 0x400) >> 10  # server is (not) an authority of domain
+            self.layer4['flag_dict']['trun'] = (self.layer4['flag'] & 0x200) >> 9  # 1: truncated
+            self.layer4['flag_dict']['rec_des'] = (self.layer4['flag'] & 0x100) >> 8  # recursion desired, 1: do query recursively
+            self.layer4['flag_dict']['rec_ava'] = (self.layer4['flag'] & 0x80) >> 7  # server can do recursive queries
+            self.layer4['flag_dict']['reply_code'] = (self.layer4['flag'] & 0xf)  # 0: no error, 1: format error, 2: server fail, 3: Nonexistent domain
             self.layer4['ques'] = dns_info[2]
             self.layer4['ansrr'] = dns_info[3]
             self.layer4['authrr'] = dns_info[4]
             self.layer4['addrr'] = dns_info[5]
 
             info = ''
-            if opcode == 0:
+            if self.layer4['flag_dict']['opcode'] == 0:
                 info += 'Standard query'
-            if opcode == 1:
+            elif self.layer4['flag_dict']['opcode'] == 1:
                 info += 'Inverse query'
-            if opcode == 2:
+            elif self.layer4['flag_dict']['opcode'] == 2:
                 info += 'Server status request'
-            if response:
+            if self.layer4['flag_dict']['response']:
                 info += ' response'
-            info += str(self.layer4['tid'])
+            info += ' ' + str(self.layer4['tid'])
 
             self.set_general_info(proto='DNS', info=info)
 
