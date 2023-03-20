@@ -254,6 +254,7 @@ class PacketDemo:
         if self.layer3['name'] == 'TCP' and (self.layer3['src'] == 80 or self.layer3['dst'] == 80):  # http
             try:
                 http_info = bytes.decode(self.raw_packet[st:], 'utf8').split('\r\n')
+                # print(http_info)
                 self.layer4['httpinfo'] = http_info
             except:
                 self.layer4['name'] = 'UNK'

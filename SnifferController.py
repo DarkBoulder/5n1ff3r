@@ -86,6 +86,9 @@ class SnifferController:
         self.ui.tableWidget.cellClicked.connect(self.showHexInfo)
         self.ui.tableWidget.cellClicked.connect(self.showTreeInfo)
 
+        self.ui.buttonRestart.setEnabled(True)
+        self.ui.buttonStop.setEnabled(True)
+
         col_header = ['No.', 'Time', 'Source', 'Destination', 'Protocol', 'Length', 'Info']
         self.ui.tableWidget.setColumnCount(len(col_header))
         for i in range(len(col_header) - 1):
@@ -111,8 +114,16 @@ class SnifferController:
         self.sniffer.HandleSignal.connect(self.CallBack)
 
         self.ui.buttonPlay.clicked.connect(lambda: self.sniffer.play())
-        self.ui.buttonPause.clicked.connect(lambda: self.sniffer.pause())
+        self.ui.buttonRestart.clicked.connect(lambda: self.sniffer.restart())
         self.ui.buttonStop.clicked.connect(lambda: self.sniffer.stop())
+
+        self.ui.buttonPlay.clicked.connect(self.play_status())
+        self.ui.buttonRestart.clicked.connect(self.restart_status())
+        self.ui.buttonStop.clicked.connect(self.stop_status())
+
+        self.ui.buttonPlay.setEnabled(False)
+        self.ui.buttonRestart.setEnabled(False)
+        self.ui.buttonStop.setEnabled(False)
 
     def setMainUI(self):
         splitter1 = QSplitter(Qt.Horizontal)
@@ -126,24 +137,24 @@ class SnifferController:
         self.ui.verticalLayout.addWidget(splitter2)
 
         self.ui.buttonPlay = QtWidgets.QPushButton()
-        self.ui.buttonPlay.setIcon(QIcon("./icons/play.png"))
+        self.ui.buttonPlay.setIcon(QIcon("./icons/play.jpg"))
         self.ui.buttonPlay.setStyleSheet("background:rgba(0,0,0,0);border:1px solid rgba(0,0,0,0);border-radius:5px;")
         self.ui.buttonPlay.setToolTip("开始捕获")
         self.ui.toolBar.addWidget(self.ui.buttonPlay)
         self.ui.toolBar.addSeparator()
 
-        self.ui.buttonPause = QtWidgets.QPushButton()
-        self.ui.buttonPause.setIcon(QIcon("./icons/pause.png"))
-        self.ui.buttonPause.setStyleSheet("background:rgba(0,0,0,0);border:1px solid rgba(0,0,0,0);border-radius:5px;")
-        self.ui.buttonPause.setToolTip("暂停捕获")
-        self.ui.toolBar.addWidget(self.ui.buttonPause)
-        self.ui.toolBar.addSeparator()
-
         self.ui.buttonStop = QtWidgets.QPushButton()
-        self.ui.buttonStop.setIcon(QIcon("./icons/stop.png"))
+        self.ui.buttonStop.setIcon(QIcon("./icons/stop.jpg"))
         self.ui.buttonStop.setStyleSheet("background:rgba(0,0,0,0);border:1px solid rgba(0,0,0,0);border-radius:5px;")
         self.ui.buttonStop.setToolTip("停止捕获")
         self.ui.toolBar.addWidget(self.ui.buttonStop)
+        self.ui.toolBar.addSeparator()
+
+        self.ui.buttonRestart = QtWidgets.QPushButton()
+        self.ui.buttonRestart.setIcon(QIcon("./icons/restart.png"))
+        self.ui.buttonRestart.setStyleSheet("background:rgba(0,0,0,0);border:1px solid rgba(0,0,0,0);border-radius:5px;")
+        self.ui.buttonRestart.setToolTip("重新开始捕获")
+        self.ui.toolBar.addWidget(self.ui.buttonRestart)
         self.ui.toolBar.addSeparator()
 
     def CallBack(self, my_packet: PacketDemo):
@@ -245,7 +256,7 @@ class SnifferController:
             layer2_version = QtWidgets.QTreeWidgetItem(layer2)
             layer2_version.setText(0, '0110 .... = Version 6')
             layer2_tc = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_tc.setText(0, '.... {} .... .... .... .... .... = Traffic Class: {}'.format('{} {}'.format(str(bin(pkt.layer2['tc']))[2:6], str(bin(pkt.layer2['tc']))[6:]), str(pkt.layer2['tc'])))
+            layer2_tc.setText(0, 'Traffic Class: {}'.format(str(pkt.layer2['tc'])))
             layer2_fl = QtWidgets.QTreeWidgetItem(layer2)
             layer2_fl.setText(0, 'Flow Lable: {}'.format(str(pkt.layer2['fl'])))
             layer2_pl = QtWidgets.QTreeWidgetItem(layer2)
@@ -305,7 +316,7 @@ class SnifferController:
                 flag_info += (ele + ', ')
             flag_info = flag_info[:-2]
             layer3_flag = QtWidgets.QTreeWidgetItem(layer3)
-            layer3_flag.setText(0, 'Flags: {} ({})'.format('%03x' % pkt.layer3['flag'], flag_info))
+            layer3_flag.setText(0, 'Flags: {} ({})'.format('0x%03x' % pkt.layer3['flag'], flag_info))
             layer3_window = QtWidgets.QTreeWidgetItem(layer3)
             layer3_window.setText(0, 'Window: {}'.format(str(pkt.layer3['window'])))
             layer3_chksum = QtWidgets.QTreeWidgetItem(layer3)
@@ -351,9 +362,10 @@ class SnifferController:
         if pkt.layer4['name'] == 'HTTP':
             layer4 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
             layer4.setText(0, 'Hypertext Transfer Protocol')
-            http_info = pkt.layer4['httpinfo'].strip().split('\r\n')
             layer4_httpinfo = []
-            for ele in http_info:
+            if pkt.layer4['httpinfo'] and pkt.layer4['httpinfo'][0] and pkt.layer4['httpinfo'][0][0] == '\x00':
+                return
+            for ele in pkt.layer4['httpinfo']:
                 layer4_httpinfo.append(QtWidgets.QTreeWidgetItem(layer4))
                 layer4_httpinfo[-1].setText(0, ele)
         elif pkt.layer4['name'] == 'HTTPS':
@@ -374,7 +386,7 @@ class SnifferController:
                         'Server status request' if pkt.layer4['flag_dict']['opcode'] == 2 else\
                         ''
             layer4_flag = QtWidgets.QTreeWidgetItem(layer4)
-            layer4_flag.setText(0, 'Flags: {} {}'.format('%04x' % pkt.layer4['flag'], flag_info))
+            layer4_flag.setText(0, 'Flags: {} {}'.format('0x%04x' % pkt.layer4['flag'], flag_info))
             # TODO: put flag details in
             layer4_ques = QtWidgets.QTreeWidgetItem(layer4)
             layer4_ques.setText(0, 'Questions: {}'.format(str(pkt.layer4['ques'])))
@@ -388,3 +400,18 @@ class SnifferController:
             layer4_query.setText(0, 'Queries')
         else:
             return
+
+    def play_status(self):
+        self.ui.buttonPlay.setEnabled(False)
+        self.ui.buttonRestart.setEnabled(True)
+        self.ui.buttonStop.setEnabled(True)
+
+    def stop_status(self):
+        self.ui.buttonPlay.setEnabled(True)
+        self.ui.buttonRestart.setEnabled(False)
+        self.ui.buttonStop.setEnabled(False)
+
+    def restart_status(self):
+        pass
+
+

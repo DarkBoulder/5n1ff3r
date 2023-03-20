@@ -62,11 +62,11 @@ class Sniffer(QtCore.QThread):
         self.conditionFlag = False
         self.cond.wakeAll()
 
-    def pause(self):
+    def restart(self):
         self.conditionFlag = True
 
     def stop(self):
-        pass
+        self.conditionFlag = True
 
     # def pause(self):
     #     self.conditionFlag = True
