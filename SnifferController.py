@@ -13,7 +13,7 @@ import libpcap as pcap
 from packetAnalyzer import *
 from utils import *
 
-device = ''
+device_name = ''
 
 
 def get_devs_name(alldevs):
@@ -51,6 +51,7 @@ class SnifferController:
         self.packets = []
 
     def setupDevice(self):
+        # show available devices
         pcap.findalldevs(ct.byref(self.alldevs), self.errbuf)
         devs_name = get_devs_name(self.alldevs)
 
@@ -61,32 +62,32 @@ class SnifferController:
             item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
             self.ui.tableWidget.setItem(row, 0, item)
 
-    def selectDevice(self, row, col):
-        global device
+    def get_device_name(self, row, col):
+        global device_name
         # 打印被选中的单元格
         res = self.ui.tableWidget.item(row, col)
         # print(row, col, self.ui.tableWidget.item(row, col))
-        device = res.text()
-        handle = pcap.open_live(bytes(device, 'utf8'), 4096, 1, 1000, self.errbuf)
+        device_name = res.text()
+        handle = pcap.open_live(bytes(device_name, 'utf8'), 4096, 1, 100, self.errbuf)
         if self.errbuf.value:
             print("handle error :", self.errbuf.value)
             exit()
 
         self.sniffer.getHandle(handle)
-        fname = b"realtime1.cap"
-        fPcap = pcap.dump_open(handle, fname)
-        fPcapUbyte = ct.cast(fPcap, ct.POINTER(ct.c_ubyte))
+        # fname = b"realtime1.cap"
+        # fPcap = pcap.dump_open(handle, fname)
+        # fPcapUbyte = ct.cast(fPcap, ct.POINTER(ct.c_ubyte))
 
-        # clear device list
+        # clear device_name list
         res = self.ui.tableWidget.rowCount()
         for i in range(res):
             self.ui.tableWidget.removeRow(0)
 
-        self.ui.tableWidget.cellDoubleClicked.disconnect(self.selectDevice)
+        self.ui.tableWidget.cellDoubleClicked.disconnect(self.get_device_name)
         self.ui.tableWidget.cellClicked.connect(self.showHexInfo)
         self.ui.tableWidget.cellClicked.connect(self.showTreeInfo)
 
-        self.ui.buttonRestart.setEnabled(True)
+        # self.ui.buttonRestart.setEnabled(True)
         self.ui.buttonStop.setEnabled(True)
 
         col_header = ['No.', 'Time', 'Source', 'Destination', 'Protocol', 'Length', 'Info']
@@ -96,34 +97,35 @@ class SnifferController:
             self.ui.tableWidget.setHorizontalHeaderItem(i + 1, item)
             item = self.ui.tableWidget.horizontalHeaderItem(i + 1)
             item.setText(self._translate("MainWindow", col_header[i + 1]))
-
         self.ui.tableWidget.horizontalHeader().setVisible(True)
 
         self.sniffer.start()
 
         # print('cnt = {}'.format(cnt))
         # print('live cap end')
-        # pcap.close(handle)
         # pcap.freealldevs(self.alldevs)
         # pcap.dump_flush(fPcap)
         # pcap.dump_close(fPcap)
 
     def setConnection(self):
         # print(self.ui.tableWidget.__dict__)
-        self.ui.tableWidget.cellDoubleClicked.connect(self.selectDevice)
+        self.ui.tableWidget.cellDoubleClicked.connect(self.get_device_name)
         self.sniffer.HandleSignal.connect(self.CallBack)
+        self.sniffer.FinishSignal.connect(self.FinishCallBack)
+
+        self.ui.buttonPlay.clicked.connect(lambda: self.play_status())
+        # self.ui.buttonRestart.clicked.connect(lambda: self.restart_status())
+        self.ui.buttonStop.clicked.connect(lambda: self.stop_status())
 
         self.ui.buttonPlay.clicked.connect(lambda: self.sniffer.play())
-        self.ui.buttonRestart.clicked.connect(lambda: self.sniffer.restart())
+        # self.ui.buttonRestart.clicked.connect(lambda: self.sniffer.restart())
         self.ui.buttonStop.clicked.connect(lambda: self.sniffer.stop())
 
-        self.ui.buttonPlay.clicked.connect(self.play_status())
-        self.ui.buttonRestart.clicked.connect(self.restart_status())
-        self.ui.buttonStop.clicked.connect(self.stop_status())
-
         self.ui.buttonPlay.setEnabled(False)
-        self.ui.buttonRestart.setEnabled(False)
+        # self.ui.buttonRestart.setEnabled(False)
         self.ui.buttonStop.setEnabled(False)
+
+        self.ui.lineEdit.textChanged.connect(lambda: self.filter_work)
 
     def setMainUI(self):
         splitter1 = QSplitter(Qt.Horizontal)
@@ -150,15 +152,10 @@ class SnifferController:
         self.ui.toolBar.addWidget(self.ui.buttonStop)
         self.ui.toolBar.addSeparator()
 
-        self.ui.buttonRestart = QtWidgets.QPushButton()
-        self.ui.buttonRestart.setIcon(QIcon("./icons/restart.png"))
-        self.ui.buttonRestart.setStyleSheet("background:rgba(0,0,0,0);border:1px solid rgba(0,0,0,0);border-radius:5px;")
-        self.ui.buttonRestart.setToolTip("重新开始捕获")
-        self.ui.toolBar.addWidget(self.ui.buttonRestart)
-        self.ui.toolBar.addSeparator()
+    def FinishCallBack(self, res):
+        self.ui.buttonPlay.setEnabled(True)
 
     def CallBack(self, my_packet: PacketDemo):
-        # assert type(packet) == 'PacketDemo'
         self.packets.append(my_packet)
         number = my_packet.cnt
         time = my_packet.time_span
@@ -168,7 +165,6 @@ class SnifferController:
         length = my_packet.len
         info = my_packet.general_info['info']
         general_info = [number, time, src, dst, proto, length, info]
-        # print(general_info)
 
         # add to widget
         self.ui.tableWidget.setSelectionBehavior(self.ui.tableWidget.SelectRows)
@@ -187,7 +183,7 @@ class SnifferController:
         self.ui.plainTextEdit.setPlainText(str(pkt.hex_packet))
 
     def showTreeInfo(self, row, col):
-        global device
+        global device_name
         self.ui.treeWidget.clear()
 
         pkt = self.packets[row]
@@ -198,9 +194,10 @@ class SnifferController:
         frameproto = QtWidgets.QTreeWidgetItem(frame)
         frameproto.setText(0, 'Encapsulation Type: {}'.format(pkt.layer1['name']))
         frameIface = QtWidgets.QTreeWidgetItem(frame)
-        frameIface.setText(0, 'Device: {}'.format(device))
+        frameIface.setText(0, 'Device: {}'.format(device_name))
         frameTimestamp = QtWidgets.QTreeWidgetItem(frame)
-        frameTimestamp.setText(0, 'Localtime: {}'.format(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(pkt.time_stamp))))
+        frameTimestamp.setText(0,
+                               'Localtime: {}'.format(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(pkt.time_stamp))))
         framenum = QtWidgets.QTreeWidgetItem(frame)
         framenum.setText(0, 'Frame Number: {}'.format(pkt.cnt))
         framelength = QtWidgets.QTreeWidgetItem(frame)
@@ -230,7 +227,9 @@ class SnifferController:
             layer2_version = QtWidgets.QTreeWidgetItem(layer2)
             layer2_version.setText(0, '0100 .... = Version 4')
             layer2_ihl = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_ihl.setText(0, '.... {} = Header Length: {} bytes ({})'.format(bin(pkt.layer2['ihl'])[2:], pkt.layer2['ihl'] * 4, pkt.layer2['ihl']))
+            layer2_ihl.setText(0, '.... {} = Header Length: {} bytes ({})'.format(bin(pkt.layer2['ihl'])[2:],
+                                                                                  pkt.layer2['ihl'] * 4,
+                                                                                  pkt.layer2['ihl']))
             layer2_tos = QtWidgets.QTreeWidgetItem(layer2)
             layer2_tos.setText(0, 'Differentiated Services Field: 0x{}'.format(str(pkt.layer2['tos']).zfill(2)))
             layer2_len = QtWidgets.QTreeWidgetItem(layer2)
@@ -242,7 +241,8 @@ class SnifferController:
             layer2_ttl = QtWidgets.QTreeWidgetItem(layer2)
             layer2_ttl.setText(0, 'Time to Live: {}'.format(str(pkt.layer2['ttl'])))
             layer2_proto = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_proto.setText(0, 'Protocol: {} ({})'.format(str(pkt.layer2['protocol']), get_key(protocol_numbers, pkt.layer2['protocol'])))
+            layer2_proto.setText(0, 'Protocol: {} ({})'.format(str(pkt.layer2['protocol']),
+                                                               get_key(protocol_numbers, pkt.layer2['protocol'])))
             layer2_chksum = QtWidgets.QTreeWidgetItem(layer2)
             layer2_chksum.setText(0, 'Header Checksum: {}'.format(str(hex(pkt.layer2['chksum']))))
             layer2_src = QtWidgets.QTreeWidgetItem(layer2)
@@ -262,7 +262,8 @@ class SnifferController:
             layer2_pl = QtWidgets.QTreeWidgetItem(layer2)
             layer2_pl.setText(0, 'Payload Length: {}'.format(pkt.layer2['pl']))
             layer2_nh = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_nh.setText(0, 'Next Header: {} ({})'.format(pkt.layer2['nh'], get_key(protocol_numbers, pkt.layer2['nh'])))
+            layer2_nh.setText(0, 'Next Header: {} ({})'.format(pkt.layer2['nh'],
+                                                               get_key(protocol_numbers, pkt.layer2['nh'])))
             layer2_hl = QtWidgets.QTreeWidgetItem(layer2)
             layer2_hl.setText(0, 'Hop Limit: {}'.format(str(pkt.layer2['hl'])))
             layer2_src = QtWidgets.QTreeWidgetItem(layer2)
@@ -275,13 +276,15 @@ class SnifferController:
             layer2_htype = QtWidgets.QTreeWidgetItem(layer2)
             layer2_htype.setText(0, 'Hardware Type: {}'.format(str(pkt.layer2['htype'])))
             layer2_ptype = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_ptype.setText(0, 'Protocol Type: {} ({})'.format(ieee_802_numbers.get(pkt.layer2['ptype'][2:]), pkt.layer2['ptype']))
+            layer2_ptype.setText(0, 'Protocol Type: {} ({})'.format(ieee_802_numbers.get(pkt.layer2['ptype'][2:]),
+                                                                    pkt.layer2['ptype']))
             layer2_hlen = QtWidgets.QTreeWidgetItem(layer2)
             layer2_hlen.setText(0, 'Hardware Size: {}'.format(str(pkt.layer2['hlen'])))
             layer2_plen = QtWidgets.QTreeWidgetItem(layer2)
             layer2_plen.setText(0, 'Protocol Size: {}'.format(str(pkt.layer2['plen'])))
             layer2_op = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_op.setText(0, 'Opcode: {} ({})'.format(pkt.layer2['op'], '1' if pkt.layer2['op'] == 'request' else '2'))
+            layer2_op.setText(0,
+                              'Opcode: {} ({})'.format(pkt.layer2['op'], '1' if pkt.layer2['op'] == 'request' else '2'))
             layer2_sha = QtWidgets.QTreeWidgetItem(layer2)
             layer2_sha.setText(0, 'Sender Hardware Address: {}'.format(pkt.layer2['sha']))
             layer2_spa = QtWidgets.QTreeWidgetItem(layer2)
@@ -381,9 +384,9 @@ class SnifferController:
             layer4.setText(0, 'Domain Name System ({})'.format(opration))
             layer4_tid = QtWidgets.QTreeWidgetItem(layer4)
             layer4_tid.setText(0, 'Transaction ID: {}'.format(str(pkt.layer4['tid'])))
-            flag_info = 'Standard query' if pkt.layer4['flag_dict']['opcode'] == 0 else\
-                        'Inverse query' if pkt.layer4['flag_dict']['opcode'] == 1 else\
-                        'Server status request' if pkt.layer4['flag_dict']['opcode'] == 2 else\
+            flag_info = 'Standard query' if pkt.layer4['flag_dict']['opcode'] == 0 else \
+                'Inverse query' if pkt.layer4['flag_dict']['opcode'] == 1 else \
+                    'Server status request' if pkt.layer4['flag_dict']['opcode'] == 2 else \
                         ''
             layer4_flag = QtWidgets.QTreeWidgetItem(layer4)
             layer4_flag.setText(0, 'Flags: {} {}'.format('0x%04x' % pkt.layer4['flag'], flag_info))
@@ -402,16 +405,43 @@ class SnifferController:
             return
 
     def play_status(self):
+        self.clear_tableWidget()
+        global device_name
+        handle = pcap.open_live(bytes(device_name, 'utf8'), 4096, 1, 1000, self.errbuf)
+        if self.errbuf.value:
+            print("handle error :", self.errbuf.value)
+            exit()
+
+        self.sniffer.getHandle(handle)
+        self.packets.clear()
+
         self.ui.buttonPlay.setEnabled(False)
-        self.ui.buttonRestart.setEnabled(True)
+        # self.ui.buttonRestart.setEnabled(True)
         self.ui.buttonStop.setEnabled(True)
 
     def stop_status(self):
-        self.ui.buttonPlay.setEnabled(True)
-        self.ui.buttonRestart.setEnabled(False)
+        self.ui.buttonPlay.setEnabled(False)
+        # self.ui.buttonRestart.setEnabled(False)
         self.ui.buttonStop.setEnabled(False)
 
-    def restart_status(self):
-        pass
+    # def restart_status(self):
+    #     self.clear_tableWidget()
+    #     self.sniffer.stop()
+    #     self.play_status()
+    #     self.sniffer.play()
+
+    def clear_tableWidget(self):
+        row = self.ui.tableWidget.rowCount()
+        for i in range(row):
+            self.ui.tableWidget.removeRow(0)
+
+    def filter_work(self):
+        txt = self.ui.lineEdit.text()
+        if '\n' not in txt:
+            return
+        filter_policy = txt.replace('\n', '')
+        self.ui.lineEdit.setText(filter_policy)
+        print(filter_policy)
+
 
 
