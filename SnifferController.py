@@ -53,6 +53,11 @@ class SnifferController:
         self.legal_proto = {'eth', 'ip', 'ipv6', 'arp', 'tcp', 'udp', 'icmp', 'http', 'https', 'dns'}
         self.legal_oprd1 = {'ip.src', 'ip.dst', 'ip.addr', 'tcp.port', 'tcp.srcport', 'tcp.dstport',
                             'udp.port', 'udp.srcport', 'udp.dstport', 'eth.src', 'eth.dst', 'eth.addr'}
+        self.legal_words = {'ip.src', 'ip.dst', 'ip.addr', 'tcp.port', 'tcp.srcport', 'tcp.dstport',
+                            'udp.port', 'udp.srcport', 'udp.dstport', 'eth.src', 'eth.dst', 'eth.addr',
+                            'eth', 'ipv6', 'ip', 'arp', 'tcp', 'udp', 'icmp', 'https', 'http', 'dns'}
+        self.seg = []
+        self.ind = []
 
     def setupDevice(self):
         # show available devices
@@ -183,7 +188,7 @@ class SnifferController:
         self.packets_mutex.lock()
         self.packets.append(pkt)
         self.packets_mutex.unlock()
-        if not self.isFiltered(pkt):
+        if len(self.seg) and not self.isFiltered(pkt, self.seg, self.ind):
             return
 
         self.add_packet_to_tableWidget(pkt)
@@ -439,11 +444,12 @@ class SnifferController:
             self.ui.tableWidget.removeRow(0)
 
     def apply_filter_policy(self):  # triggered when pressed enter in lineEdit, deal with existing packets
-        self.filter_policy = self.ui.lineEdit.text().lower()
+        self.filter_policy = self.ui.lineEdit.text().strip().lower()
         self.clear_tableWidget()
-        seg, ind = self.policy_slice()
+        self.seg, self.ind = self.policy_slice()
+        print('****** new policy applied ******\nseg: {}, ind: {}'.format(self.seg, self.ind))
         for ele in self.packets:
-            if self.isFiltered(ele, seg, ind):
+            if self.isFiltered(ele, self.seg, self.ind):
                 self.add_packet_to_tableWidget(ele)
 
     def isFiltered(self, pkt, seg, ind) -> bool:  # True -> show pkt
@@ -456,27 +462,33 @@ class SnifferController:
                     op_st -= 1
                 return expr[:op_st].strip(), expr[op_st:op_st + 2], expr[op_st + 2:].strip()
 
+        seg_cpy = seg.copy()
+        print("-----pkt info: {}-----".format(pkt.layer2['name']))
         for ele in ind:
-            opd1, opr, opd2 = triplizer(seg[ele])
-            seg[ele] = 'True' if self.isSentenceFiltered(pkt, opd1, opr, opd2) else 'False'
-        val = True
-        expr = 'val = ' + ' '.join(seg)
+            print("------checking segs------\nseg[ele]: {}".format(seg_cpy[ele]))
+            opd1, opr, opd2 = triplizer(seg_cpy[ele])
+            print("expression after seg: {}, {}, {}".format(opd1, opr, opd2))
+            seg_cpy[ele] = 'True' if self.isSentenceFiltered(pkt, opd1, opr, opd2) else 'False'
+
+        val = None
+        expr = ' '.join(seg_cpy)
         try:
-            exec(expr)
+            val = eval(expr)
+            # print('expr: ' + expr + ' val: {}'.format(val))
         except:
             print('expr error: ' + expr)
+        # print('val{}'.format(val))
         return val
 
     def policy_slice(self) -> (dict, dict):
         # "A and B" -> ["A", "and", "B"]
         raw_str = self.filter_policy
-        legal_words = list(set.union(self.legal_proto, self.legal_oprd1))
         res1 = []  # sliced string
         res2 = []  # index of sentence in res1
         st = 0
         while st < len(raw_str):
             word_find = False
-            for word in legal_words:
+            for word in self.legal_words:  # TODO: wrong usage
                 find_res = raw_str.find(word, st)
                 if find_res != -1:
                     word_find = True
