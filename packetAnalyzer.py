@@ -82,13 +82,14 @@ class PacketDemo:
             'opt': None, 'htype': None, 'ptype': None, 'hlen': None, 'plen': None,
             'op': None, 'info': None, 'sha': None, 'spa': None, 'tha': None, 'tpa': None, 'op_len': None
         }
-        # tcp udp icmp igmp
+        # tcp udp icmp
         self.layer3 = {
             'name': None, 'src': None, 'dst': None, 'seq': None, 'ack': None, 'op': None,
             'hl': None, 'reserved': None, 'flag': None, 'len': None, 'chksum': None, 'up': None,
             'type': None, 'code': None, 'id': None, 'info': None, 'window': None, 'tcptrace': None,
             'tcpSdTrace': None, 'tcpRcTrace': None, 'flag_dic': None
         }
+        # http https dns
         self.layer4 = {
             'name': None, 'info': None, 'rqm': None, 'rqu': None, 'rqv': None, 'rpv': None, 'sc': None, 'rpp': None,
             'tid': None, 'flag': None, 'ques': None, 'ansrr': None, 'authrr': None, 'addrr': None, 'httpinfo': None,
@@ -251,7 +252,8 @@ class PacketDemo:
             self.set_general_info(proto='ICMP', info=self.layer3['info'])
 
     def parse_layer4(self, st):
-        if self.layer3['name'] == 'TCP' and (self.layer3['src'] == 80 or self.layer3['dst'] == 80):  # http
+        # http
+        if self.layer3['name'] == 'TCP' and (self.layer3['src'] == 80 or self.layer3['dst'] == 80):
             try:
                 http_info = bytes.decode(self.raw_packet[st:], 'utf8').split('\r\n')
                 # print(http_info)
@@ -277,11 +279,13 @@ class PacketDemo:
                 self.layer4['rpp'] = ' '.join(response[2:])  # response phrase
             self.layer4['info'] = http_info[0]
             self.set_general_info(proto='HTTP', info='')
-        elif self.layer3['name'] == 'TCP' and (self.layer3['src'] == 443 or self.layer3['dst'] == 443):  # https
+        # https
+        elif self.layer3['name'] == 'TCP' and (self.layer3['src'] == 443 or self.layer3['dst'] == 443):
             self.layer4['name'] = 'HTTPS'
             self.layer4['info'] = ''
             self.set_general_info(proto='HTTPS', info='')
-        elif self.layer3['name'] == 'UDP' and (self.layer3['src'] == 53 or self.layer3['dst'] == 53):  # DNS
+        # DNS
+        elif self.layer3['name'] == 'UDP' and (self.layer3['src'] == 53 or self.layer3['dst'] == 53):
             dns_info = struct.unpack('>HHHHHH', self.raw_packet[st:st + 12])
             self.layer4['name'] = 'DNS'
             self.layer4['tid'] = hex(dns_info[0])

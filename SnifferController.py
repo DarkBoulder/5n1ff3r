@@ -13,8 +13,6 @@ import libpcap as pcap
 from packetAnalyzer import *
 from utils import *
 
-device_name = ''
-
 
 def get_devs_name(alldevs):
     """
@@ -49,6 +47,12 @@ class SnifferController:
         self.alldevs = ct.POINTER(pcap.pcap_if_t)()
         self.setupDevice()
         self.packets = []
+        self.packets_mutex = QMutex()
+        self.device_name = ''
+        self.filter_policy = ''
+        self.legal_proto = {'eth', 'ip', 'ipv6', 'arp', 'tcp', 'udp', 'icmp', 'http', 'https', 'dns'}
+        self.legal_oprd1 = {'ip.src', 'ip.dst', 'ip.addr', 'tcp.port', 'tcp.srcport', 'tcp.dstport',
+                            'udp.port', 'udp.srcport', 'udp.dstport', 'eth.src', 'eth.dst', 'eth.addr'}
 
     def setupDevice(self):
         # show available devices
@@ -63,12 +67,10 @@ class SnifferController:
             self.ui.tableWidget.setItem(row, 0, item)
 
     def get_device_name(self, row, col):
-        global device_name
-        # 打印被选中的单元格
         res = self.ui.tableWidget.item(row, col)
         # print(row, col, self.ui.tableWidget.item(row, col))
-        device_name = res.text()
-        handle = pcap.open_live(bytes(device_name, 'utf8'), 4096, 1, 100, self.errbuf)
+        self.device_name = res.text()
+        handle = pcap.open_live(bytes(self.device_name, 'utf8'), 4096, 1, 100, self.errbuf)
         if self.errbuf.value:
             print("handle error :", self.errbuf.value)
             exit()
@@ -86,6 +88,8 @@ class SnifferController:
         self.ui.tableWidget.cellDoubleClicked.disconnect(self.get_device_name)
         self.ui.tableWidget.cellClicked.connect(self.showHexInfo)
         self.ui.tableWidget.cellClicked.connect(self.showTreeInfo)
+
+        self.ui.tableWidget.setSelectionBehavior(self.ui.tableWidget.SelectRows)
 
         # self.ui.buttonRestart.setEnabled(True)
         self.ui.buttonStop.setEnabled(True)
@@ -125,7 +129,7 @@ class SnifferController:
         # self.ui.buttonRestart.setEnabled(False)
         self.ui.buttonStop.setEnabled(False)
 
-        self.ui.lineEdit.textChanged.connect(lambda: self.filter_work)
+        self.ui.lineEdit.returnPressed.connect(lambda: self.apply_filter_policy())
 
     def setMainUI(self):
         splitter1 = QSplitter(Qt.Horizontal)
@@ -155,19 +159,17 @@ class SnifferController:
     def FinishCallBack(self, res):
         self.ui.buttonPlay.setEnabled(True)
 
-    def CallBack(self, my_packet: PacketDemo):
-        self.packets.append(my_packet)
-        number = my_packet.cnt
-        time = my_packet.time_span
-        src = my_packet.general_info['src']
-        dst = my_packet.general_info['dst']
-        proto = my_packet.general_info['proto']
-        length = my_packet.len
-        info = my_packet.general_info['info']
+    def add_packet_to_tableWidget(self, pkt):
+        number = pkt.cnt
+        time = pkt.time_span
+        src = pkt.general_info['src']
+        dst = pkt.general_info['dst']
+        proto = pkt.general_info['proto']
+        length = pkt.len
+        info = pkt.general_info['info']
         general_info = [number, time, src, dst, proto, length, info]
 
         # add to widget
-        self.ui.tableWidget.setSelectionBehavior(self.ui.tableWidget.SelectRows)
         row = self.ui.tableWidget.rowCount()
         self.ui.tableWidget.insertRow(row)
         for i in range(len(general_info)):
@@ -176,14 +178,22 @@ class SnifferController:
             self.ui.tableWidget.setItem(row, i, item)
             if number == 1:
                 self.ui.tableWidget.resizeColumnToContents(i)
-        # print(my_packet.print_layer())
+
+    def CallBack(self, pkt: PacketDemo):  # call back after parsing a packet, deal with new packets
+        self.packets_mutex.lock()
+        self.packets.append(pkt)
+        self.packets_mutex.unlock()
+        if not self.isFiltered(pkt):
+            return
+
+        self.add_packet_to_tableWidget(pkt)
+        # print(pkt.print_layer())
 
     def showHexInfo(self, row, col):
         pkt = self.packets[row]
         self.ui.plainTextEdit.setPlainText(str(pkt.hex_packet))
 
     def showTreeInfo(self, row, col):
-        global device_name
         self.ui.treeWidget.clear()
 
         pkt = self.packets[row]
@@ -194,7 +204,7 @@ class SnifferController:
         frameproto = QtWidgets.QTreeWidgetItem(frame)
         frameproto.setText(0, 'Encapsulation Type: {}'.format(pkt.layer1['name']))
         frameIface = QtWidgets.QTreeWidgetItem(frame)
-        frameIface.setText(0, 'Device: {}'.format(device_name))
+        frameIface.setText(0, 'Device: {}'.format(self.device_name))
         frameTimestamp = QtWidgets.QTreeWidgetItem(frame)
         frameTimestamp.setText(0,
                                'Localtime: {}'.format(time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(pkt.time_stamp))))
@@ -406,8 +416,7 @@ class SnifferController:
 
     def play_status(self):
         self.clear_tableWidget()
-        global device_name
-        handle = pcap.open_live(bytes(device_name, 'utf8'), 4096, 1, 1000, self.errbuf)
+        handle = pcap.open_live(bytes(self.device_name, 'utf8'), 4096, 1, 1000, self.errbuf)
         if self.errbuf.value:
             print("handle error :", self.errbuf.value)
             exit()
@@ -424,24 +433,206 @@ class SnifferController:
         # self.ui.buttonRestart.setEnabled(False)
         self.ui.buttonStop.setEnabled(False)
 
-    # def restart_status(self):
-    #     self.clear_tableWidget()
-    #     self.sniffer.stop()
-    #     self.play_status()
-    #     self.sniffer.play()
-
     def clear_tableWidget(self):
         row = self.ui.tableWidget.rowCount()
         for i in range(row):
             self.ui.tableWidget.removeRow(0)
 
-    def filter_work(self):
-        txt = self.ui.lineEdit.text()
-        if '\n' not in txt:
-            return
-        filter_policy = txt.replace('\n', '')
-        self.ui.lineEdit.setText(filter_policy)
-        print(filter_policy)
+    def apply_filter_policy(self):  # triggered when pressed enter in lineEdit, deal with existing packets
+        self.filter_policy = self.ui.lineEdit.text().lower()
+        self.clear_tableWidget()
+        seg, ind = self.policy_slice()
+        for ele in self.packets:
+            if self.isFiltered(ele, seg, ind):
+                self.add_packet_to_tableWidget(ele)
 
+    def isFiltered(self, pkt, seg, ind) -> bool:  # True -> show pkt
+        def triplizer(expr: str):
+            if expr in self.legal_proto:
+                return expr, '==', None
+            else:
+                op_st = expr.find('=')
+                if expr[op_st - 1] == '!':
+                    op_st -= 1
+                return expr[:op_st].strip(), expr[op_st:op_st + 2], expr[op_st + 2:].strip()
 
+        for ele in ind:
+            opd1, opr, opd2 = triplizer(seg[ele])
+            seg[ele] = 'True' if self.isSentenceFiltered(pkt, opd1, opr, opd2) else 'False'
+        val = True
+        expr = 'val = ' + ' '.join(seg)
+        try:
+            exec(expr)
+        except:
+            print('expr error: ' + expr)
+        return val
 
+    def policy_slice(self) -> (dict, dict):
+        # "A and B" -> ["A", "and", "B"]
+        raw_str = self.filter_policy
+        legal_words = list(set.union(self.legal_proto, self.legal_oprd1))
+        res1 = []  # sliced string
+        res2 = []  # index of sentence in res1
+        st = 0
+        while st < len(raw_str):
+            word_find = False
+            for word in legal_words:
+                find_res = raw_str.find(word, st)
+                if find_res != -1:
+                    word_find = True
+                    if word in self.legal_proto:
+                        if raw_str[st:find_res] != '':
+                            res1.append(raw_str[st:find_res])
+                        res1.append(raw_str[find_res:find_res + len(word)])
+                        res2.append(len(res1) - 1)
+                        st = find_res + len(word)
+                    else:  # legal_oprd1
+                        def find_whole_sentence():  # return last ind + 1 if found else -1
+                            st0 = find_res + len(word)
+                            while st0 < len(raw_str) and raw_str[st0] == ' ':
+                                st0 += 1
+                            if st0 == len(raw_str):
+                                return -1
+                            if st0 + 1 < len(raw_str) and (
+                                    raw_str[st0:st0 + 2] == '==' or raw_str[st0:st0 + 2] == '!='):
+                                st0 += 2
+                            else:
+                                return -1
+                            while st0 < len(raw_str) and raw_str[st0] == ' ':
+                                st0 += 1
+                            if st0 == len(raw_str):
+                                return -1
+
+                            while st0 < len(raw_str) and raw_str[st0] != ' ':
+                                st0 += 1
+                            return st0
+
+                        ed = find_whole_sentence()
+                        if ed == -1:  # TODO: illegal expression, deal later, now escape
+                            res1.append(raw_str[st:])
+                            st = len(raw_str)
+                        else:
+                            if raw_str[st:find_res] != '':
+                                res1.append(raw_str[st:find_res])
+                            res1.append(raw_str[find_res:ed])
+                            res2.append(len(res1) - 1)
+                            st = ed
+                    break
+            if not word_find:
+                if raw_str[st:] != '':
+                    res1.append(raw_str[st:])
+                break
+
+        return res1, res2
+
+    def isSentenceFiltered(self, pkt: PacketDemo, opd1: str, opr: str = None, opd2: str = None):  # True == show pkt
+        # ip filter, ip.src/dst/addr == x.x.x.x
+        if opd1 in ['ip.src', 'ip.dst', 'ip.addr']:
+            if pkt.layer2['name'] != 'Internet Protocol version 4 (IPv4)':  # pkt is not a valid object
+                return True
+            if not self.isValidIP(opd2):
+                print('illegal ip opd2')
+                return False
+            if opr not in ['==', '!=']:
+                print('illegal ip opr')
+                return False
+            if opd1 == 'ip.src':
+                return pkt.layer2['src'] == opd2 if opr == '==' else pkt.layer2['src'] != opd2
+            elif opd1 == 'ip.dst':
+                return pkt.layer2['dst'] == opd2 if opr == '==' else pkt.layer2['dst'] != opd2
+            else:
+                return (pkt.layer2['src'] == opd2 or pkt.layer2['dst'] == opd2) if opr == '==' else \
+                    (pkt.layer2['src'] != opd2 or pkt.layer2['dst'] != opd2)
+
+        # tcp/udp.port/srcport/dstport == 80
+        elif opd1 in ['tcp.port', 'tcp.srcport', 'tcp.dstport', 'udp.port', 'udp.srcport', 'udp.dstport']:
+            if opd1 in ['tcp.port', 'tcp.srcport', 'tcp.dstport']:
+                if pkt.layer3['name'] != 'TCP':
+                    return True
+                if not self.isValidPort(opd2):
+                    print('illegal tcp opd2')
+                    return False
+                if opr not in ['==', '!=']:
+                    print('illegal tcp opr')
+                    return False
+
+                opd2 = int(opd2)
+                if opd1 == 'tcp.srcport':
+                    return pkt.layer3['src'] == opd2 if opr == '==' else pkt.layer3['src'] != opd2
+                elif opd1 == 'tcp.dstport':
+                    return pkt.layer3['dst'] == opd2 if opr == '==' else pkt.layer3['dst'] != opd2
+                else:
+                    return (pkt.layer3['src'] == opd2 or pkt.layer3['dst'] == opd2) if opr == '==' else \
+                        (pkt.layer3['src'] != opd2 or pkt.layer3['dst'] != opd2)
+
+            if opd1 in ['udp.port', 'udp.srcport', 'udp.dstport']:
+                if pkt.layer3['name'] != 'UDP':
+                    return True
+                if not self.isValidPort(opd2):
+                    print('illegal udp opd2')
+                    return False
+                if opr not in ['==', '!=']:
+                    print('illegal udp opr')
+                    return False
+
+                opd2 = int(opd2)
+                if opd1 == 'tcp.srcport':
+                    return pkt.layer3['src'] == opd2 if opr == '==' else pkt.layer3['src'] != opd2
+                elif opd1 == 'tcp.dstport':
+                    return pkt.layer3['dst'] == opd2 if opr == '==' else pkt.layer3['dst'] != opd2
+                else:
+                    return (pkt.layer3['src'] == opd2 or pkt.layer3['dst'] == opd2) if opr == '==' else \
+                        (pkt.layer3['src'] != opd2 or pkt.layer3['dst'] != opd2)
+
+        # http/tcp/ip/ipv6...
+        elif opd1 in ['eth', 'ip', 'ipv6', 'arp', 'tcp', 'udp', 'icmp', 'http', 'https', 'dns']:
+            if opr not in ['==', '!=']:
+                print('illegal protocol opr')
+                return False
+            if opd1 == 'eth':
+                return pkt.layer1['name'] == 'EthernetII' if opr == '==' else pkt.layer1['name'] != 'EthernetII'
+            elif opd1 in ['ip', 'ipv6', 'arp']:
+                token = 'Internet Protocol version 4 (IPv4)' if opd1 == 'ip' else \
+                    'Internet Protocol version 6 (IPv6)' if opd1 == 'ipv6' else \
+                        'Address Resolution Protocol (ARP)'
+                return pkt.layer2['name'] == token if opr == '==' else pkt.layer2['name'] != token
+            elif opd1 in ['tcp', 'udp', 'icmp']:
+                token = opd1.upper()
+                return pkt.layer3['name'] == token if opr == '==' else pkt.layer3['name'] != token
+            elif opd1 in ['http', 'https', 'dns']:
+                token = opd1.upper()
+                return pkt.layer4['name'] == token if opr == '==' else pkt.layer4['name'] != token
+            else:
+                print('illegal protocol type')
+                return False
+        # eth.src/dst/addr == xxx
+        elif opd1 in ['eth.src', 'eth.dst', 'eth.addr']:
+            if pkt.layer1['name'] != 'EthernetII':  # pkt is not a valid object
+                return True
+            if opr not in ['==', '!=']:
+                print('illegal eth opr')
+                return False
+            if opd1 == 'eth.src':
+                return pkt.layer1['src'] == opd2 if opr == '==' else pkt.layer1['src'] != opd2
+            elif opd1 == 'eth.dst':
+                return pkt.layer1['dst'] == opd2 if opr == '==' else pkt.layer1['dst'] != opd2
+            else:
+                return (pkt.layer1['src'] == opd2 or pkt.layer1['dst'] == opd2) if opr == '==' else \
+                    (pkt.layer1['src'] != opd2 or pkt.layer1['dst'] != opd2)
+        else:  # illegal sentence, do filter
+            print('illegal sentence')
+            return False
+
+    def isValidIP(self, ip: str):
+        segs = ip.split('.')
+        if len(segs) != 4:
+            return False
+        for ele in segs:
+            if not ele.isdigit() or int(ele) < 0 or int(ele) > 255:
+                return False
+        return True
+
+    def isValidPort(self, port: str):
+        if not port.isdigit() or int(port) < 1 or int(port) > 65535:
+            return False
+        return True
