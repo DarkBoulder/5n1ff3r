@@ -86,8 +86,7 @@ class PacketDemo:
         self.layer3 = {
             'name': None, 'src': None, 'dst': None, 'seq': None, 'ack': None, 'op': None,
             'hl': None, 'reserved': None, 'flag': None, 'len': None, 'chksum': None, 'up': None,
-            'type': None, 'code': None, 'id': None, 'info': None, 'window': None, 'tcptrace': None,
-            'tcpSdTrace': None, 'tcpRcTrace': None, 'flag_dic': None
+            'type': None, 'code': None, 'id': None, 'info': None, 'window': None, 'flag_dic': None
         }
         # http https dns
         self.layer4 = {
@@ -157,7 +156,7 @@ class PacketDemo:
             self.layer2['pl'] = ipv6_info[1]  # payload_length, 1 for 1Byte
             self.layer2['nh'] = protocol_numbers.get(ipv6_info[2], 'Unassigned')  # next_header
             self.layer2['hl'] = ipv6_info[3]  # hop_limit
-            self.set_general_info(self.layer2['src'], self.layer2['dst'], 'IPv6', '')
+            self.set_general_info(self.layer2['src'], self.layer2['dst'], 'IPv6', ' ')
             self.parse_layer3(st + 40)
 
         elif self.layer1['type'] == 'Address Resolution Protocol (ARP)':
@@ -207,10 +206,9 @@ class PacketDemo:
                 self.layer3['op'] = struct.unpack('>{}s'.format(op_extra), self.raw_packet[st + 20:st + 20 + op_extra])
 
             if self.layer2['name'] == 'Internet Protocol version 4 (IPv4)':
-                # print(self.layer2['len'], self.layer2['ihl'] * 4, self.layer2['op_len'], self.layer3['hl'] * 4, op_extra)
-                self.layer3['payload_len'] = self.layer2['len'] - self.layer2['ihl'] * 4 - self.layer2['op_len'] - self.layer3['hl'] * 4 - op_extra
+                self.layer3['payload_len'] = self.layer2['len'] - self.layer2['ihl'] * 4 - self.layer2['op_len'] - self.layer3['hl'] * 4  #  - op_extra
             elif self.layer2['name'] == 'Internet Protocol version 6 (IPv6)':
-                self.layer3['payload_len'] = self.layer2['pl'] - 40 - self.layer3['hl'] * 4 - op_extra
+                self.layer3['payload_len'] = self.layer2['pl'] - 40 - self.layer3['hl'] * 4  # - op_extra
 
             if self.layer2['protocol'] == 'TCP':
                 self.set_general_info(proto='TCP', info='{} -> {} [{}]'
@@ -229,10 +227,8 @@ class PacketDemo:
             self.layer3['dst'] = udp_info[1]  # destination port num
             self.layer3['length'] = udp_info[2]  # header(8) + data
             self.layer3['chksum'] = udp_info[3]
-            if self.layer2['protocol'] == 'UDP':
-                self.set_general_info(proto='UDP', info='')
-            else:
-                self.set_general_info(proto='UDPv6', info='')
+
+            self.set_general_info(proto='UDP', info='{} -> {}'.format(self.layer3['src'], self.layer3['dst']))
             if len(self.raw_packet) >= st + 8:
                 self.parse_layer4(st + 8)
 
@@ -251,17 +247,20 @@ class PacketDemo:
                 if self.layer3['type'] == 0 else 'id={}, seq={}'.format(self.layer3['id'], self.layer3['seq'])
             self.set_general_info(proto='ICMP', info=self.layer3['info'])
 
+        elif self.layer2['nh'] == 'HOPOPT' or self.layer2['nh'] == 'IPv6-ICMP':
+            self.layer3['name'] = 'ICMPv6'
+            self.layer3['info'] = ' '
+            self.set_general_info(proto='ICMPv6', info=self.layer3['info'])
+
     def parse_layer4(self, st):
         # http
         if self.layer3['name'] == 'TCP' and (self.layer3['src'] == 80 or self.layer3['dst'] == 80):
             try:
                 http_info = bytes.decode(self.raw_packet[st:], 'utf8').split('\r\n')
-                # print(http_info)
                 self.layer4['httpinfo'] = http_info
             except:
                 self.layer4['name'] = 'UNK'
                 return
-            self.layer4['name'] = 'HTTP'
             is_request = False
             for ele in http_request_methods:
                 if ele in set(http_info[0]):
@@ -277,13 +276,17 @@ class PacketDemo:
                 self.layer4['rpv'] = response[0]  # response version
                 self.layer4['sc'] = response[1]  # status code
                 self.layer4['rpp'] = ' '.join(response[2:])  # response phrase
+            else:
+                self.layer4['name'] = 'UNK'  # take it as tcp protocol
+                return
+            self.layer4['name'] = 'HTTP'
             self.layer4['info'] = http_info[0]
-            self.set_general_info(proto='HTTP', info='')
+            self.set_general_info(proto='HTTP', info=http_info[0])
         # https
-        elif self.layer3['name'] == 'TCP' and (self.layer3['src'] == 443 or self.layer3['dst'] == 443):
-            self.layer4['name'] = 'HTTPS'
-            self.layer4['info'] = ''
-            self.set_general_info(proto='HTTPS', info='')
+        # elif self.layer3['name'] == 'TCP' and (self.layer3['src'] == 443 or self.layer3['dst'] == 443):
+        #     self.layer4['name'] = 'HTTPS'
+        #     self.layer4['info'] = ''
+        #     self.set_general_info(proto='HTTPS', info='')
         # DNS
         elif self.layer3['name'] == 'UDP' and (self.layer3['src'] == 53 or self.layer3['dst'] == 53):
             dns_info = struct.unpack('>HHHHHH', self.raw_packet[st:st + 12])
@@ -313,8 +316,17 @@ class PacketDemo:
             if self.layer4['flag_dict']['response']:
                 info += ' response'
             info += ' ' + str(self.layer4['tid'])
-
             self.set_general_info(proto='DNS', info=info)
+
+        elif tcp_udp_ports.get(self.layer3['src'], False) or tcp_udp_ports.get(self.layer3['dst'], False):
+            proto_src = tcp_udp_ports.get(self.layer3['src'], False)
+            proto_dst = tcp_udp_ports.get(self.layer3['dst'], False)
+            if proto_src:
+                self.layer4['name'] = proto_src.upper()
+            else:
+                self.layer4['name'] = proto_dst.upper()
+            info = '{} -> {}'.format(self.layer3['src'], self.layer3['dst'])
+            self.set_general_info(proto=self.layer4['name'], info=info)
 
     def parse_packet(self):
         self.parse_layer1()

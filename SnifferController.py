@@ -107,6 +107,12 @@ class SnifferController:
             item = self.ui.tableWidget.horizontalHeaderItem(i + 1)
             item.setText(self._translate("MainWindow", col_header[i + 1]))
         self.ui.tableWidget.horizontalHeader().setVisible(True)
+        self.ui.tableWidget.setColumnWidth(0, 20)
+        self.ui.tableWidget.setColumnWidth(1, 80)
+        self.ui.tableWidget.setColumnWidth(2, 150)
+        self.ui.tableWidget.setColumnWidth(3, 150)
+        self.ui.tableWidget.setColumnWidth(4, 70)
+        self.ui.tableWidget.setColumnWidth(5, 50)
 
         self.sniffer.start()
 
@@ -177,12 +183,13 @@ class SnifferController:
         # add to widget
         row = self.ui.tableWidget.rowCount()
         self.ui.tableWidget.insertRow(row)
+        self.ui.tableWidget.setRowHeight(row, 15)
         for i in range(len(general_info)):
             item = QtWidgets.QTableWidgetItem(str(general_info[i]))
             item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
             self.ui.tableWidget.setItem(row, i, item)
-            if number == 1:
-                self.ui.tableWidget.resizeColumnToContents(i)
+            # if number == 1:
+            #     self.ui.tableWidget.resizeColumnToContents(i)
 
     def CallBack(self, pkt: PacketDemo):  # call back after parsing a packet, deal with new packets
         self.packets_mutex.lock()
@@ -195,13 +202,14 @@ class SnifferController:
         # print(pkt.print_layer())
 
     def showHexInfo(self, row, col):
-        pkt = self.packets[row]
+        ind = self.ui.tableWidget.item(row, 0).text()
+        pkt = self.packets[int(ind) - 1]
         self.ui.plainTextEdit.setPlainText(str(pkt.hex_packet))
 
     def showTreeInfo(self, row, col):
         self.ui.treeWidget.clear()
-
-        pkt = self.packets[row]
+        ind = self.ui.tableWidget.item(row, 0).text()
+        pkt = self.packets[int(ind) - 1]
 
         # packet info
         frame = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
@@ -342,7 +350,7 @@ class SnifferController:
             layer3_up = QtWidgets.QTreeWidgetItem(layer3)
             layer3_up.setText(0, 'Urgent Pointer: {}'.format(str(hex(pkt.layer3['up']))))
             layer3_payload = QtWidgets.QTreeWidgetItem(layer3)
-            layer3_payload.setText(0, 'TCP Payload: {}'.format(str(hex(pkt.layer3['payload_len']))))
+            layer3_payload.setText(0, 'TCP Payload: {}'.format(str(pkt.layer3['payload_len'])))
         elif pkt.layer3['name'] == 'UDP':
             layer3 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
             layer3.setText(0, 'User Datagram Protocol, Src Port: {}, Dst Port: {}'.format(
@@ -390,13 +398,13 @@ class SnifferController:
             layer4 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
             layer4.setText(0, 'Hypertext Transfer Protocol Secure')
         elif pkt.layer4['name'] == 'DNS':
-            opration = ''
+            operation = ''
             if pkt.layer4['flag_dict']['opcode'] <= 1:
                 operation = 'query'
             elif pkt.layer4['flag_dict']['opcode'] == 2:
                 operation = 'request'
             layer4 = QtWidgets.QTreeWidgetItem(self.ui.treeWidget)
-            layer4.setText(0, 'Domain Name System ({})'.format(opration))
+            layer4.setText(0, 'Domain Name System ({})'.format(operation))
             layer4_tid = QtWidgets.QTreeWidgetItem(layer4)
             layer4_tid.setText(0, 'Transaction ID: {}'.format(str(pkt.layer4['tid'])))
             flag_info = 'Standard query' if pkt.layer4['flag_dict']['opcode'] == 0 else \
@@ -446,7 +454,7 @@ class SnifferController:
     def apply_filter_policy(self):  # triggered when pressed enter in lineEdit, deal with existing packets
         self.filter_policy = self.ui.lineEdit.text().strip().lower()
         self.clear_tableWidget()
-        self.seg, self.ind = self.policy_slice()
+        self.seg, self.ind = self.policy_slice_new()
         print('****** new policy applied ******\nseg: {}, ind: {}'.format(self.seg, self.ind))
         for ele in self.packets:
             if self.isFiltered(ele, self.seg, self.ind):
@@ -461,9 +469,10 @@ class SnifferController:
                 if expr[op_st - 1] == '!':
                     op_st -= 1
                 return expr[:op_st].strip(), expr[op_st:op_st + 2], expr[op_st + 2:].strip()
-
         seg_cpy = seg.copy()
-        print("-----pkt info: {}-----".format(pkt.layer2['name']))
+        print("-----pkt cnt: {}-----".format(pkt.cnt))
+        if len(seg) == 0:
+            return True
         for ele in ind:
             print("------checking segs------\nseg[ele]: {}".format(seg_cpy[ele]))
             opd1, opr, opd2 = triplizer(seg_cpy[ele])
@@ -479,6 +488,87 @@ class SnifferController:
             print('expr error: ' + expr)
         # print('val{}'.format(val))
         return val
+
+    def policy_slice_new(self) -> (dict, dict):
+        # 'http and(ip.src==1.1.1.1 or not ip)' -> ['http', ' and(', 'ip.src==1.1.1.1', ' or not', 'ip', ')'], [0, 2, 4]
+        # self.legal_words = {'ip.src', 'ip.dst', 'ip.addr', 'tcp.port', 'tcp.srcport', 'tcp.dstport',
+        #                     'udp.port', 'udp.srcport', 'udp.dstport', 'eth.src', 'eth.dst', 'eth.addr',
+        #                     'eth', 'ipv6', 'ip', 'arp', 'tcp', 'udp', 'icmp', 'https', 'http', 'dns'}
+        raw_str = self.filter_policy
+        res1 = []
+        res2 = []
+        old_st = 0
+        st = 0
+        lenr = len(raw_str)
+        legal_dict = {
+            'i': ['ip.addr', 'ip.src', 'ip.dst', 'icmp', 'ipv6', 'ip'],
+            't': ['tcp.port', 'tcp.srcport', 'tcp.dstport', 'tcp'],
+            'u': ['udp.port', 'udp.srcport', 'udp.dstport', 'udp'],
+            'e': ['eth.src', 'eth.dst', 'eth.addr', 'eth'],
+            'a': ['arp'],
+            'h': ['https', 'http'],
+            'd': ['dns']
+        }
+        legal_first_letter = ['i', 't', 'u', 'e', 'a', 'h', 'd']
+
+        def find_legal_word(legal_list):
+            for ele in legal_list:
+                if st + len(ele) - 1 < lenr and raw_str[st:st + len(ele)] == ele:
+                    return st + len(ele)
+            return -1
+
+        while 0 <= st < lenr:
+            if raw_str[st] in legal_first_letter:
+                nxt = find_legal_word(legal_dict[raw_str[st]])
+                if nxt == -1:  # and
+                    st += 1
+                else:
+                    word = raw_str[st:nxt]
+                    if word in self.legal_proto:
+                        if old_st != st:
+                            res1.append(raw_str[old_st:st])
+                        res1.append(raw_str[st:nxt])
+                        res2.append(len(res1) - 1)
+                        st = nxt
+                        old_st = st
+                    else:  # legal_oprd1
+                        def find_whole_sentence():  # return last ind + 1 if found else -1
+                            st0 = nxt
+                            while st0 < len(raw_str) and raw_str[st0] == ' ':
+                                st0 += 1
+                            if st0 == len(raw_str):
+                                return -1
+                            if st0 + 1 < len(raw_str) and (
+                                    raw_str[st0:st0 + 2] == '==' or raw_str[st0:st0 + 2] == '!='):
+                                st0 += 2
+                            else:
+                                return -1
+                            while st0 < len(raw_str) and raw_str[st0] == ' ':
+                                st0 += 1
+                            if st0 == len(raw_str):
+                                return -1
+
+                            while st0 < len(raw_str) and raw_str[st0] != ' ':
+                                st0 += 1
+                            return st0
+
+                        ed = find_whole_sentence()
+                        if ed == -1:  # TODO: illegal expression, deal later, now escape
+                            res1.append(raw_str[st:])
+                            st = len(raw_str)
+                            old_st = st
+                        else:
+                            if old_st != st:
+                                res1.append(raw_str[old_st:st])
+                            res1.append(raw_str[st:ed])
+                            res2.append(len(res1) - 1)
+                            st = ed
+                            old_st = st
+            else:
+                st += 1
+        if old_st != st:
+            res1.append(raw_str[old_st:st])
+        return res1, res2
 
     def policy_slice(self) -> (dict, dict):
         # "A and B" -> ["A", "and", "B"]
@@ -541,7 +631,7 @@ class SnifferController:
         # ip filter, ip.src/dst/addr == x.x.x.x
         if opd1 in ['ip.src', 'ip.dst', 'ip.addr']:
             if pkt.layer2['name'] != 'Internet Protocol version 4 (IPv4)':  # pkt is not a valid object
-                return True
+                return False
             if not self.isValidIP(opd2):
                 print('illegal ip opd2')
                 return False
@@ -560,7 +650,7 @@ class SnifferController:
         elif opd1 in ['tcp.port', 'tcp.srcport', 'tcp.dstport', 'udp.port', 'udp.srcport', 'udp.dstport']:
             if opd1 in ['tcp.port', 'tcp.srcport', 'tcp.dstport']:
                 if pkt.layer3['name'] != 'TCP':
-                    return True
+                    return False
                 if not self.isValidPort(opd2):
                     print('illegal tcp opd2')
                     return False
@@ -579,7 +669,7 @@ class SnifferController:
 
             if opd1 in ['udp.port', 'udp.srcport', 'udp.dstport']:
                 if pkt.layer3['name'] != 'UDP':
-                    return True
+                    return False
                 if not self.isValidPort(opd2):
                     print('illegal udp opd2')
                     return False
@@ -620,7 +710,7 @@ class SnifferController:
         # eth.src/dst/addr == xxx
         elif opd1 in ['eth.src', 'eth.dst', 'eth.addr']:
             if pkt.layer1['name'] != 'EthernetII':  # pkt is not a valid object
-                return True
+                return False
             if opr not in ['==', '!=']:
                 print('illegal eth opr')
                 return False
