@@ -105,7 +105,7 @@ class SnifferController:
             item = QtWidgets.QTableWidgetItem()
             self.ui.tableWidget.setHorizontalHeaderItem(i + 1, item)
             item = self.ui.tableWidget.horizontalHeaderItem(i + 1)
-            item.setText(self._translate("MainWindow", col_header[i + 1]))
+            item.setText(self._translate("5n1ff3r", col_header[i + 1]))
         self.ui.tableWidget.horizontalHeader().setVisible(True)
         self.ui.tableWidget.setColumnWidth(0, 20)
         self.ui.tableWidget.setColumnWidth(1, 80)
@@ -250,7 +250,9 @@ class SnifferController:
             layer2_version = QtWidgets.QTreeWidgetItem(layer2)
             layer2_version.setText(0, '0100 .... = Version 4')
             layer2_ihl = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_ihl.setText(0, '.... {} = Header Length: {} bytes ({})'.format(bin(pkt.layer2['ihl'])[2:],
+            ihl = bin(pkt.layer2['ihl'])[2:]
+            ihl_f = '0' * (4 - len(ihl)) + ihl  # fill front with 0
+            layer2_ihl.setText(0, '.... {} = Header Length: {} bytes ({})'.format(ihl_f,
                                                                                   pkt.layer2['ihl'] * 4,
                                                                                   pkt.layer2['ihl']))
             layer2_tos = QtWidgets.QTreeWidgetItem(layer2)
@@ -259,8 +261,18 @@ class SnifferController:
             layer2_len.setText(0, 'Total Length: {}'.format(str(pkt.layer2['len'])))
             layer2_id = QtWidgets.QTreeWidgetItem(layer2)
             layer2_id.setText(0, 'Identification: {}'.format(str(hex(pkt.layer2['id']))))
+            status_info = ''
+            status_info += 'Don\'t fragment' if pkt.layer2['flag']['df'] else ''
             layer2_flag = QtWidgets.QTreeWidgetItem(layer2)
-            layer2_flag.setText(0, 'Flags: {}'.format(str(hex(pkt.layer2['flag']))))
+            layer2_flag.setText(0, 'Flags: {}, {}'.format(str(hex(pkt.layer2['flag']['fr'])), status_info))
+            layer2_rb = QtWidgets.QTreeWidgetItem(layer2_flag)
+            layer2_rb.setText(0, 'Reserved bit: {}'.format('Set' if pkt.layer2['flag']['rb'] == 1 else 'Not set'))
+            layer2_df = QtWidgets.QTreeWidgetItem(layer2_flag)
+            layer2_df.setText(0, 'Don\'t fragment: {}'.format('Set' if pkt.layer2['flag']['df'] == 1 else 'Not set'))
+            layer2_mf = QtWidgets.QTreeWidgetItem(layer2_flag)
+            layer2_mf.setText(0, 'More fragments: {}'.format('Set' if pkt.layer2['flag']['mf'] == 1 else 'Not set'))
+            layer2_fo = QtWidgets.QTreeWidgetItem(layer2)
+            layer2_fo.setText(0, 'Fragment Offset: {}'.format(str(pkt.layer2['flag']['fo'])))
             layer2_ttl = QtWidgets.QTreeWidgetItem(layer2)
             layer2_ttl.setText(0, 'Time to Live: {}'.format(str(pkt.layer2['ttl'])))
             layer2_proto = QtWidgets.QTreeWidgetItem(layer2)
@@ -454,7 +466,7 @@ class SnifferController:
     def apply_filter_policy(self):  # triggered when pressed enter in lineEdit, deal with existing packets
         self.filter_policy = self.ui.lineEdit.text().strip().lower()
         self.clear_tableWidget()
-        self.seg, self.ind = self.policy_slice_new()
+        self.seg, self.ind = self.policy_slice()
         print('****** new policy applied ******\nseg: {}, ind: {}'.format(self.seg, self.ind))
         for ele in self.packets:
             if self.isFiltered(ele, self.seg, self.ind):
@@ -489,7 +501,7 @@ class SnifferController:
         # print('val{}'.format(val))
         return val
 
-    def policy_slice_new(self) -> (dict, dict):
+    def policy_slice(self) -> (dict, dict):
         # 'http and(ip.src==1.1.1.1 or not ip)' -> ['http', ' and(', 'ip.src==1.1.1.1', ' or not', 'ip', ')'], [0, 2, 4]
         # self.legal_words = {'ip.src', 'ip.dst', 'ip.addr', 'tcp.port', 'tcp.srcport', 'tcp.dstport',
         #                     'udp.port', 'udp.srcport', 'udp.dstport', 'eth.src', 'eth.dst', 'eth.addr',
@@ -568,63 +580,6 @@ class SnifferController:
                 st += 1
         if old_st != st:
             res1.append(raw_str[old_st:st])
-        return res1, res2
-
-    def policy_slice(self) -> (dict, dict):
-        # "A and B" -> ["A", "and", "B"]
-        raw_str = self.filter_policy
-        res1 = []  # sliced string
-        res2 = []  # index of sentence in res1
-        st = 0
-        while st < len(raw_str):
-            word_find = False
-            for word in self.legal_words:  # TODO: wrong usage
-                find_res = raw_str.find(word, st)
-                if find_res != -1:
-                    word_find = True
-                    if word in self.legal_proto:
-                        if raw_str[st:find_res] != '':
-                            res1.append(raw_str[st:find_res])
-                        res1.append(raw_str[find_res:find_res + len(word)])
-                        res2.append(len(res1) - 1)
-                        st = find_res + len(word)
-                    else:  # legal_oprd1
-                        def find_whole_sentence():  # return last ind + 1 if found else -1
-                            st0 = find_res + len(word)
-                            while st0 < len(raw_str) and raw_str[st0] == ' ':
-                                st0 += 1
-                            if st0 == len(raw_str):
-                                return -1
-                            if st0 + 1 < len(raw_str) and (
-                                    raw_str[st0:st0 + 2] == '==' or raw_str[st0:st0 + 2] == '!='):
-                                st0 += 2
-                            else:
-                                return -1
-                            while st0 < len(raw_str) and raw_str[st0] == ' ':
-                                st0 += 1
-                            if st0 == len(raw_str):
-                                return -1
-
-                            while st0 < len(raw_str) and raw_str[st0] != ' ':
-                                st0 += 1
-                            return st0
-
-                        ed = find_whole_sentence()
-                        if ed == -1:  # TODO: illegal expression, deal later, now escape
-                            res1.append(raw_str[st:])
-                            st = len(raw_str)
-                        else:
-                            if raw_str[st:find_res] != '':
-                                res1.append(raw_str[st:find_res])
-                            res1.append(raw_str[find_res:ed])
-                            res2.append(len(res1) - 1)
-                            st = ed
-                    break
-            if not word_find:
-                if raw_str[st:] != '':
-                    res1.append(raw_str[st:])
-                break
-
         return res1, res2
 
     def isSentenceFiltered(self, pkt: PacketDemo, opd1: str, opr: str = None, opd2: str = None):  # True == show pkt

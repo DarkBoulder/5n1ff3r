@@ -133,7 +133,13 @@ class PacketDemo:
             self.layer2['tos'] = ipv4_info[1]  # type of service
             self.layer2['len'] = ipv4_info[2]  # total length, 1B for each
             self.layer2['id'] = ipv4_info[3]
-            self.layer2['flag'] = ipv4_info[4]  # TODO: parse 3 flags, 13 fragment offset
+            self.layer2['flag'] = {
+                'fr': (ipv4_info[4] & 0xe000) >> 13,  # front
+                'rb': (ipv4_info[4] & 0x8000) >> 15,  # reserved bit
+                'df': (ipv4_info[4] & 0x4000) >> 14,  # don't fragment
+                'mf': (ipv4_info[4] & 0x2000) >> 13,  # more fragment
+                'fo': (ipv4_info[4] & 0x1fff),  # fragment offset
+            }
             self.layer2['ttl'] = ipv4_info[5]
             self.layer2['protocol'] = protocol_numbers.get(ipv4_info[6], 'Unassigned')
             self.layer2['chksum'] = ipv4_info[7]
