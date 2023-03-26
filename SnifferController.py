@@ -45,7 +45,7 @@ class SnifferController:
         self._translate = QtCore.QCoreApplication.translate
         self.errbuf = ct.create_string_buffer(pcap.PCAP_ERRBUF_SIZE + 1)
         self.alldevs = ct.POINTER(pcap.pcap_if_t)()
-        self.setupDevice()
+        self.bfr_device()
         self.packets = []
         self.packets_mutex = QMutex()
         self.device_name = ''
@@ -59,7 +59,7 @@ class SnifferController:
         self.seg = []
         self.ind = []
 
-    def setupDevice(self):
+    def bfr_device(self):
         # show available devices
         pcap.findalldevs(ct.byref(self.alldevs), self.errbuf)
         devs_name = get_devs_name(self.alldevs)
@@ -71,7 +71,7 @@ class SnifferController:
             item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
             self.ui.tableWidget.setItem(row, 0, item)
 
-    def get_device_name(self, row, col):
+    def aft_device(self, row, col):
         res = self.ui.tableWidget.item(row, col)
         # print(row, col, self.ui.tableWidget.item(row, col))
         self.device_name = res.text()
@@ -90,7 +90,7 @@ class SnifferController:
         for i in range(res):
             self.ui.tableWidget.removeRow(0)
 
-        self.ui.tableWidget.cellDoubleClicked.disconnect(self.get_device_name)
+        self.ui.tableWidget.cellDoubleClicked.disconnect(self.aft_device)
         self.ui.tableWidget.cellClicked.connect(self.showHexInfo)
         self.ui.tableWidget.cellClicked.connect(self.showTreeInfo)
 
@@ -124,7 +124,7 @@ class SnifferController:
 
     def setConnection(self):
         # print(self.ui.tableWidget.__dict__)
-        self.ui.tableWidget.cellDoubleClicked.connect(self.get_device_name)
+        self.ui.tableWidget.cellDoubleClicked.connect(self.aft_device)
         self.sniffer.HandleSignal.connect(self.CallBack)
         self.sniffer.FinishSignal.connect(self.FinishCallBack)
 

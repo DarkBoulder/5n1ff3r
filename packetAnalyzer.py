@@ -88,7 +88,7 @@ class PacketDemo:
             'hl': None, 'reserved': None, 'flag': None, 'len': None, 'chksum': None, 'up': None,
             'type': None, 'code': None, 'id': None, 'info': None, 'window': None, 'flag_dic': None
         }
-        # http https dns
+        # http dns
         self.layer4 = {
             'name': None, 'info': None, 'rqm': None, 'rqu': None, 'rqv': None, 'rpv': None, 'sc': None, 'rpp': None,
             'tid': None, 'flag': None, 'ques': None, 'ansrr': None, 'authrr': None, 'addrr': None, 'httpinfo': None,
